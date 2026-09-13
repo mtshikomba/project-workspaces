@@ -1,0 +1,19 @@
+<section class="workspace-menu-panel" aria-labelledby="workspace-menu-title">
+    <div>
+        <p class="eyebrow">Selected workspace</p>
+        <h2 id="workspace-menu-title">{{ workspace.name }}</h2>
+    </div>
+    <div class="menu-anchor workspace-menu-anchor">
+        <button class="menu-trigger workspace-menu-trigger" type="button" aria-label="Workspace menu" aria-expanded="false" aria-controls="workspace-menu" data-menu-trigger="workspace-menu">
+            <span aria-hidden="true">Workspace menu</span>
+        </button>
+        <nav class="dropdown-menu workspace-dropdown" id="workspace-menu" data-menu aria-label="{{ workspace.name }} navigation" hidden>
+            <a href="{% url 'workspace-home' workspace.pk %}"{% if request.resolver_match.url_name == 'workspace-home' %} aria-current="page"{% endif %}>Home</a>
+            <a href="{% url 'workspace-projects' workspace.pk %}"{% if request.resolver_match.url_name == 'workspace-projects' %} aria-current="page"{% endif %}>Projects</a>
+            <a href="{% url 'workspace-tasks' workspace.pk %}"{% if request.resolver_match.url_name == 'workspace-tasks' %} aria-current="page"{% endif %}>Tasks</a>
+            <a href="{% url 'workspace-members' workspace.pk %}"{% if request.resolver_match.url_name == 'workspace-members' %} aria-current="page"{% endif %}>Members</a>
+            {% if membership.role == 'admin' %}<a href="{% url 'workspace-settings' workspace.pk %}"{% if request.resolver_match.url_name == 'workspace-settings' %} aria-current="page"{% endif %}>Settings</a>{% endif %}
+            <a href="{% url 'client-landing' %}">Client overview</a>
+        </nav>
+    </div>
+</section>

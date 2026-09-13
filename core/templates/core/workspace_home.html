@@ -9,23 +9,14 @@
 </head>
 <body>
 <div class="page-shell workspace-shell">
-    <header class="topbar">
-        <a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a>
-        <nav class="workspace-nav" aria-label="Workspace navigation">
-            <span class="workspace-current">{{ workspace.name }}</span>
-            <a href="{% url 'client-landing' %}">Client overview</a>
-            <a href="{% url 'workspace-projects' workspace.pk %}">Projects</a>
-            <a href="{% url 'workspace-tasks' workspace.pk %}">Tasks</a>
-            <a href="{% url 'workspace-members' workspace.pk %}">Members</a>
-        </nav>
-        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form>
-    </header>
+    {% include "core/_authenticated_header.html" %}
     <main>
         <section class="workspace-hero" aria-labelledby="workspace-title">
             <p class="eyebrow">Company workspace</p>
             <h1 id="workspace-title">{{ workspace.name }}</h1>
             <p class="intro-copy">Manage this company's projects, tasks, and people in one focused space.</p>
         </section>
+        {% include "core/_workspace_menu.html" %}
         <section class="workspace-switcher" aria-labelledby="switcher-title">
             <label id="switcher-title" for="workspace-switch">Switch workspace</label>
             <select id="workspace-switch" onchange="if (this.value) window.location.href = this.value;">

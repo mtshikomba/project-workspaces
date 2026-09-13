@@ -27,6 +27,26 @@ a { color: inherit; }
 
 .page-shell { max-width: 1180px; margin: 0 auto; padding: 0 32px 64px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; padding: 25px 0; border-bottom: 1px solid var(--line); }
+.authenticated-topbar { position: relative; gap: 14px; }
+.menu-trigger { border: 0; cursor: pointer; }
+.profile-trigger { display: inline-grid; flex: 0 0 auto; width: 38px; height: 38px; place-items: center; padding: 0; color: var(--ink); background: var(--yellow); border-radius: 50%; }
+.profile-avatar { font: 700 0.8rem/1 Arial, sans-serif; }
+.menu-anchor { position: relative; }
+.authenticated-topbar .brand { flex: 0 0 auto; }
+.authenticated-topbar .workspace-current { margin-left: 8px; }
+.header-spacer { flex: 1 1 auto; }
+.dropdown-menu { position: absolute; z-index: 10; top: calc(100% + 10px); min-width: 190px; padding: 8px; background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.account-menu-anchor .dropdown-menu { left: 0; }
+.workspace-menu-anchor .dropdown-menu { right: 0; }
+.dropdown-menu a, .dropdown-menu button { display: block; width: 100%; padding: 11px 12px; color: var(--ink); background: transparent; border: 0; text-align: left; text-decoration: none; font: 700 0.75rem/1.2 Arial, sans-serif; }
+.dropdown-menu a:hover, .dropdown-menu a[aria-current="page"], .dropdown-menu button:hover { color: var(--white); background: var(--teal); }
+.dropdown-menu .dropdown-danger { color: #9b4d16; }
+.dropdown-menu .dropdown-danger:hover { color: var(--white); background: #a44f43; }
+.workspace-menu-panel { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 16px; padding: 18px 20px; background: var(--blue-wash); border: 1px solid var(--line); }
+.workspace-menu-panel h2 { margin: 0; font-size: 1.5rem; font-weight: 400; }
+.workspace-menu-panel .eyebrow { margin-bottom: 6px; }
+.workspace-menu-trigger { min-height: 42px; padding: 11px 16px; color: var(--teal-dark); background: var(--white); border: 1px solid var(--teal); font: 700 0.72rem/1 Arial, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+.workspace-menu-anchor .dropdown-menu { top: calc(100% + 8px); right: 0; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 1.05rem; font-weight: 700; text-decoration: none; }
 .brand-mark { display: inline-grid; width: 34px; height: 34px; place-items: center; color: var(--ink); background: var(--yellow); font: 700 0.75rem/1 Arial, sans-serif; letter-spacing: 0.05em; }
 .text-button { padding: 8px 0; color: var(--muted); background: none; border: 0; cursor: pointer; font: 600 0.78rem/1 Arial, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -242,12 +262,18 @@ h2 { margin-bottom: 0; font-size: 2.5rem; font-weight: 400; letter-spacing: -0.0
     .detail-grid { grid-template-columns: 1fr; }
     .project-grid { grid-template-columns: 1fr; }
     .workspace-grid { grid-template-columns: 1fr; }
-    .workspace-shell .topbar { align-items: flex-start; flex-wrap: wrap; }
+    .workspace-shell .topbar { align-items: center; flex-wrap: wrap; }
+    .authenticated-topbar .workspace-current { width: auto; }
+    .account-menu-anchor .dropdown-menu { left: 0; }
+    .workspace-menu-anchor .dropdown-menu { right: 0; }
     .workspace-nav { order: 3; justify-content: flex-start; width: 100%; overflow-x: auto; padding-bottom: 4px; }
     .workspace-hero { padding: 52px 0 28px; }
     .workspace-switcher { align-items: stretch; flex-direction: column; }
     .workspace-switcher select { width: 100%; }
     .workspace-task-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+    .workspace-menu-panel { align-items: stretch; flex-direction: column; gap: 14px; }
+    .workspace-menu-trigger { width: 100%; }
+    .workspace-menu-anchor .dropdown-menu { right: 0; left: 0; }
     .workspace-card { align-items: stretch; flex-direction: column; }
     .workspace-card .secondary-button { width: 100%; }
     .workspace-member-list li { align-items: stretch; flex-direction: column; }

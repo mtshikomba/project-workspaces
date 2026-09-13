@@ -65,6 +65,162 @@ class PublicLandingPageTests(TestCase):
         self.assertRedirects(response, "/accounts/login/?next=/workspace/")
 
 
+class AuthenticatedNavigationTests(TestCase):
+    """Verify shared profile and workspace navigation menu contracts."""
+
+    def setUp(self) -> None:
+        self.client_group = Group.objects.create(name="Client")
+        self.user = User.objects.create_user(
+            username="navigation-client", password="test-password"
+        )
+        self.user.groups.add(self.client_group)
+        self.client.force_login(self.user)
+
+    def test_client_overview_exposes_profile_menu_and_csrf_logout(self) -> None:
+        """The client header groups profile and sign-out actions in a menu."""
+        response = self.client.get("/workspace/")
+
+        self.assertContains(response, 'aria-label="Open account menu"')
+        self.assertContains(response, 'aria-expanded="false"')
+        self.assertContains(response, 'aria-controls="account-menu"')
+        self.assertContains(response, 'id="account-menu"')
+        self.assertContains(response, 'href="/profile/"')
+        self.assertContains(response, 'action="/accounts/logout/"')
+        self.assertContains(response, 'name="csrfmiddlewaretoken"')
+        self.assertContains(response, "navigation_menu.js")
+        self.assertGreater(
+            response.content.find(b'data-menu-trigger="account-menu"'),
+            response.content.find(b'class="brand"'),
+        )
+
+    def test_company_workspace_menu_contains_contextual_links(self) -> None:
+        """An active workspace exposes scoped destinations through its menu."""
+        workspace = Workspace.objects.create(
+            name="Navigation Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.get(f"/workspaces/{workspace.pk}/")
+
+        self.assertContains(response, 'aria-label="Workspace menu"')
+        self.assertContains(response, 'aria-controls="workspace-menu"')
+        header_end = response.content.find(b"</header>")
+        self.assertNotIn(
+            b'class="workspace-menu-trigger"', response.content[:header_end]
+        )
+        main_start = response.content.find(b"<main>")
+        self.assertGreater(
+            response.content.find(b'aria-label="Workspace menu"'), main_start
+        )
+        self.assertContains(response, workspace.name)
+        self.assertContains(response, f"/workspaces/{workspace.pk}/projects/")
+        self.assertContains(response, f"/workspaces/{workspace.pk}/tasks/")
+        self.assertContains(response, f"/workspaces/{workspace.pk}/members/")
+        self.assertContains(response, f"/workspaces/{workspace.pk}/settings/")
+        self.assertContains(response, "/workspace/")
+
+    def test_company_client_does_not_see_workspace_settings_menu_item(self) -> None:
+        """Clients do not receive administrator-only workspace settings navigation."""
+        workspace = Workspace.objects.create(
+            name="Client Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+
+        response = self.client.get(f"/workspaces/{workspace.pk}/")
+
+        self.assertNotContains(response, f"/workspaces/{workspace.pk}/settings/")
+
+    def test_workspace_action_pages_use_shared_headers_and_menu(self) -> None:
+        """Workspace action pages retain both shared navigation contexts."""
+        workspace = Workspace.objects.create(
+            name="Action Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        project = Project.objects.create(
+            client=self.user, workspace=workspace, name="Action project"
+        )
+        task = Task.objects.create(
+            client=self.user, project=project, title="Action task"
+        )
+        paths = (
+            f"/workspaces/{workspace.pk}/projects/new/",
+            f"/workspaces/{workspace.pk}/tasks/new/",
+            f"/workspaces/{workspace.pk}/settings/",
+            f"/workspaces/{workspace.pk}/tasks/{task.pk}/",
+        )
+
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'aria-label="Open account menu"')
+                self.assertContains(response, 'aria-label="Workspace menu"')
+
+        collaborator_response = self.client.get(
+            f"/projects/{project.pk}/collaborators/invite/"
+        )
+        self.assertContains(collaborator_response, 'aria-label="Open account menu"')
+        self.assertContains(collaborator_response, 'aria-label="Workspace menu"')
+
+    def test_workspace_delete_and_project_collaboration_pages_use_shared_menus(
+        self,
+    ) -> None:
+        """Destructive and collaboration pages keep shared navigation context."""
+        workspace = Workspace.objects.create(
+            name="Navigation Actions", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.user,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        project = Project.objects.create(
+            client=self.user, workspace=workspace, name="Navigation project"
+        )
+        task = Task.objects.create(
+            client=self.user, project=project, title="Navigation task"
+        )
+        response = self.client.get(
+            f"/workspaces/{workspace.pk}/tasks/{task.pk}/delete/"
+        )
+
+        self.assertContains(response, 'aria-label="Open account menu"')
+        self.assertContains(response, 'aria-label="Workspace menu"')
+
+    def test_authenticated_pages_use_shared_profile_menu(self) -> None:
+        """Personal and workspace pages expose the shared account menu trigger."""
+        project = Project.objects.create(client=self.user, name="Navigation project")
+        task = Task.objects.create(
+            client=self.user, project=project, title="Navigation task"
+        )
+        paths = (
+            "/projects/",
+            f"/projects/{project.pk}/",
+            f"/projects/{project.pk}/edit/",
+            "/tasks/new/",
+            f"/tasks/{task.pk}/",
+        )
+
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'aria-label="Open account menu"')
+                self.assertContains(response, 'id="account-menu"')
+
+
 class ClientProfileTests(TestCase):
     """Verify client profile access and privilege boundaries."""
 
@@ -658,9 +814,10 @@ class ClientProjectManagementTests(TestCase):
                 response = self.client.get(path)
 
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, 'class="topbar"')
+                self.assertContains(response, "authenticated-topbar")
                 self.assertContains(response, 'class="brand"')
                 self.assertContains(response, 'action="/accounts/logout/"')
+                self.assertContains(response, 'aria-label="Open account menu"')
 
     def test_project_name_is_unique_per_client(self) -> None:
         """A client cannot create duplicate project names."""
@@ -995,7 +1152,7 @@ class WorkspaceTests(TestCase):
         response = self.client.get("/workspaces/new/")
 
         self.assertContains(response, '<body class="auth-page action-page">')
-        self.assertContains(response, 'class="topbar"')
+        self.assertContains(response, "authenticated-topbar")
         self.assertContains(response, 'class="login-panel task-form-panel"')
         self.assertContains(response, 'class="eyebrow"')
         self.assertContains(response, "primary-button--full")

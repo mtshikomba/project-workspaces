@@ -1,0 +1,18 @@
+{% load static %}
+<header class="topbar authenticated-topbar">
+    <a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a>
+    {% if workspace %}
+        <span class="workspace-current">{{ workspace.name }}</span>
+    {% endif %}
+    <span class="header-spacer"></span>
+    <div class="menu-anchor account-menu-anchor">
+        <button class="menu-trigger profile-trigger" type="button" aria-label="Open account menu" aria-expanded="false" aria-controls="account-menu" data-menu-trigger="account-menu">
+            <span class="profile-avatar" aria-hidden="true">{{ user.username|first|upper }}</span>
+        </button>
+        <div class="dropdown-menu" id="account-menu" data-menu hidden>
+            <a href="{% url 'profile' %}">Profile</a>
+            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="dropdown-danger" type="submit">Sign out</button></form>
+        </div>
+    </div>
+</header>
+<script src="{% static 'core/navigation_menu.js' %}" defer></script>

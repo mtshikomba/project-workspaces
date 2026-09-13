@@ -9,24 +9,7 @@
 </head>
 <body class="auth-page action-page">
     <div class="page-shell">
-        <header class="topbar">
-            <a class="brand" href="{% url 'client-landing' %}">
-                <span class="brand-mark">CT</span>
-                <span>Client tasks</span>
-            </a>
-            <form method="post" action="{% url 'logout' %}">
-                {% csrf_token %}
-                <button class="text-button" type="submit">Sign out</button>
-            </form>
-            <nav class="workspace-nav" aria-label="Workspace navigation">
-                <span class="workspace-current">{{ workspace.name }}</span>
-                <a href="{% url 'client-landing' %}">Client overview</a>
-                <a href="{% url 'workspace-home' workspace.pk %}">Home</a>
-                <a href="{% url 'workspace-projects' workspace.pk %}">Projects</a>
-                <a href="{% url 'workspace-tasks' workspace.pk %}">Tasks</a>
-                <a href="{% url 'workspace-members' workspace.pk %}" aria-current="page">Members</a>
-            </nav>
-        </header>
+        {% include "core/_authenticated_header.html" %}
         <main class="login-panel task-form-panel">
         <a class="back-link" href="{% url 'client-landing' %}">← Back to workspace</a>
         <p class="eyebrow">Company collaboration</p>

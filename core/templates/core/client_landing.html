@@ -9,17 +9,7 @@
 </head>
 <body>
     <div class="page-shell">
-        <header class="topbar">
-            <a class="brand" href="{% url 'client-landing' %}">
-                <span class="brand-mark">CT</span>
-                <span>Client tasks</span>
-            </a>
-            <form method="post" action="{% url 'logout' %}">
-                {% csrf_token %}
-                <button class="text-button" type="submit">Sign out</button>
-            </form>
-            <a class="text-button" href="{% url 'profile' %}">Profile</a>
-        </header>
+        {% include "core/_authenticated_header.html" %}
 
         <main>
             <section class="intro" aria-labelledby="page-title">
