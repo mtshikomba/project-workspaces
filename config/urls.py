@@ -56,6 +56,7 @@ from core.views import (
     WorkspaceProjectListView,
     WorkspaceProjectDetailView,
     WorkspaceProjectCreateView,
+    WorkspaceProjectUpdateView,
     WorkspaceTaskListView,
     WorkspaceTaskCreateView,
     WorkspaceTaskDetailView,
@@ -83,6 +84,11 @@ urlpatterns = [
         "workspaces/<int:pk>/projects/new/",
         WorkspaceProjectCreateView.as_view(),
         name="workspace-project-create",
+    ),
+    path(
+        "workspaces/<int:pk>/projects/<int:project_id>/edit/",
+        WorkspaceProjectUpdateView.as_view(),
+        name="workspace-project-update",
     ),
     path(
         "workspaces/<int:pk>/projects/<int:project_id>/",

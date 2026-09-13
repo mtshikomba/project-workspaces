@@ -1609,6 +1609,91 @@ class WorkspaceManagementContextTests(TestCase):
         self.assertRedirects(response, f"/workspaces/{self.workspace.pk}/projects/")
         self.assertEqual(project.workspace, self.workspace)
 
+    def test_workspace_project_form_locks_selected_workspace(self) -> None:
+        """Workspace project creation displays its route workspace as fixed."""
+        self.client.force_login(self.admin)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/projects/new/")
+
+        form = response.context["form"]
+        self.assertEqual(form.fields["workspace"].initial, self.workspace.pk)
+        self.assertTrue(form.fields["workspace"].disabled)
+        self.assertContains(response, self.workspace.name)
+        self.assertContains(response, "disabled")
+
+    def test_workspace_project_invalid_submission_preserves_context_and_values(
+        self,
+    ) -> None:
+        """Invalid workspace project submissions retain context and values."""
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/projects/new/",
+            {
+                "name": self.project.name,
+                "description": "Keep this project description",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.workspace.name)
+        self.assertContains(response, "Keep this project description")
+        self.assertContains(response, "You already have a project with this name.")
+        self.assertEqual(
+            response.context["form"]["workspace"].value(), self.workspace.pk
+        )
+
+    def test_workspace_project_list_links_to_project_detail(self) -> None:
+        """Workspace project cards open the selected project context."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/projects/")
+
+        self.assertContains(
+            response,
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/",
+        )
+
+    def test_admin_can_edit_project_in_workspace_context(self) -> None:
+        """Workspace administrators can edit projects without losing context."""
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/edit/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Edit project")
+        self.assertContains(response, "Save changes")
+        self.assertContains(response, self.workspace.name)
+        self.assertContains(response, "disabled")
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/edit/",
+            {
+                "name": "Updated company project",
+                "description": "Updated context",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/",
+        )
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.workspace, self.workspace)
+        self.assertEqual(self.project.name, "Updated company project")
+
+    def test_company_member_cannot_edit_project_in_workspace_context(self) -> None:
+        """Workspace clients cannot use the administrator project edit route."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/edit/"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_workspace_create_forms_render_selected_context(self) -> None:
         """Workspace project and task forms render without losing route context."""
         self.client.force_login(self.admin)

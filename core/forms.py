@@ -157,13 +157,24 @@ class ProjectForm(forms.ModelForm):
         fields = ("workspace", "name", "description")
 
     def __init__(
-        self, *args: object, client: User, workspaces=None, **kwargs: object
+        self,
+        *args: object,
+        client: User,
+        workspaces=None,
+        workspace_context: Optional[Workspace] = None,
+        **kwargs: object,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.client_user = client
         self.fields["workspace"].required = False
         if workspaces is not None:
             self.fields["workspace"].queryset = workspaces
+        if workspace_context is not None:
+            self.fields["workspace"].queryset = Workspace.objects.filter(
+                pk=workspace_context.pk
+            )
+            self.fields["workspace"].initial = workspace_context.pk
+            self.fields["workspace"].disabled = True
 
     def clean_name(self) -> str:
         """Reject duplicate project names for the current client."""
