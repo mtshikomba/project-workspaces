@@ -44,11 +44,55 @@ from core.views import (
     ClientProjectInvitationDeclineByIdView,
     HealthCheckView,
     PublicLandingPageView,
+    WorkspaceCreateView,
+    WorkspaceInviteView,
+    WorkspaceInvitationAcceptView,
+    WorkspaceInvitationDeclineView,
+    WorkspaceInvitationRevokeView,
+    WorkspaceMemberListView,
+    WorkspaceMemberRemoveView,
+    WorkspaceMemberRoleView,
 )
 
 urlpatterns = [
     path("", PublicLandingPageView.as_view(), name="public-landing"),
     path("workspace/", ClientLandingPageView.as_view(), name="client-landing"),
+    path("workspaces/new/", WorkspaceCreateView.as_view(), name="workspace-create"),
+    path(
+        "workspaces/<int:pk>/members/",
+        WorkspaceMemberListView.as_view(),
+        name="workspace-members",
+    ),
+    path(
+        "workspaces/<int:pk>/members/invite/",
+        WorkspaceInviteView.as_view(),
+        name="workspace-invite",
+    ),
+    path(
+        "workspaces/<int:pk>/members/<int:membership_id>/remove/",
+        WorkspaceMemberRemoveView.as_view(),
+        name="workspace-member-remove",
+    ),
+    path(
+        "workspaces/<int:pk>/members/<int:membership_id>/role/",
+        WorkspaceMemberRoleView.as_view(),
+        name="workspace-member-role",
+    ),
+    path(
+        "workspace-invitations/<int:pk>/accept/",
+        WorkspaceInvitationAcceptView.as_view(),
+        name="workspace-invitation-accept",
+    ),
+    path(
+        "workspace-invitations/<int:pk>/decline/",
+        WorkspaceInvitationDeclineView.as_view(),
+        name="workspace-invitation-decline",
+    ),
+    path(
+        "workspaces/<int:pk>/members/invitations/<int:invitation_id>/revoke/",
+        WorkspaceInvitationRevokeView.as_view(),
+        name="workspace-invitation-revoke",
+    ),
     path("accounts/register/", ClientRegistrationView.as_view(), name="register"),
     path("profile/", ClientProfileView.as_view(), name="profile"),
     path(

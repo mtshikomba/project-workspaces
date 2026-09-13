@@ -4,7 +4,15 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.models import User
 from typing import Optional
 
-from core.models import Project, ProjectInvitation, ProjectMembership, Task
+from core.models import (
+    Project,
+    ProjectInvitation,
+    ProjectMembership,
+    Task,
+    Workspace,
+    WorkspaceInvitation,
+    WorkspaceMembership,
+)
 from core.sanitization import clean_rich_text
 
 
@@ -21,7 +29,75 @@ class ClientRegistrationForm(UserCreationForm):
         if commit:
             client_group, _ = Group.objects.get_or_create(name="Client")
             user.groups.add(client_group)
+            workspace = Workspace.objects.create(
+                name=f"{user.username}'s workspace", kind=Workspace.Kind.PERSONAL
+            )
+            WorkspaceMembership.objects.create(
+                workspace=workspace,
+                user=user,
+                role=WorkspaceMembership.Role.ADMIN,
+            )
         return user
+
+
+class WorkspaceCreateForm(forms.ModelForm):
+    """Validate creation of a company workspace."""
+
+    class Meta:
+        model = Workspace
+        fields = ("name",)
+
+    def clean_name(self) -> str:
+        """Reject empty or duplicate workspace names for the creator."""
+        name = self.cleaned_data["name"].strip()
+        if not name:
+            raise forms.ValidationError("Enter a workspace name.")
+        return name
+
+
+class WorkspaceInviteForm(forms.Form):
+    """Invite an existing Client user to a company workspace."""
+
+    username = forms.CharField(
+        max_length=150,
+        label="Client username",
+        help_text="Enter the username of an existing Client user.",
+    )
+
+    def __init__(
+        self,
+        *args: object,
+        workspace: Workspace,
+        inviter: User,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.workspace = workspace
+        self.inviter = inviter
+
+    def clean_username(self) -> str:
+        """Validate that the target is an eligible workspace client."""
+        username = self.cleaned_data["username"]
+        try:
+            invitee = User.objects.get(username=username)
+        except User.DoesNotExist as error:
+            raise forms.ValidationError("Enter an existing Client username.") from error
+        if invitee == self.inviter:
+            raise forms.ValidationError("You cannot invite yourself.")
+        if not invitee.groups.filter(name="Client").exists():
+            raise forms.ValidationError("The user must be a Client user.")
+        if WorkspaceMembership.objects.filter(
+            workspace=self.workspace, user=invitee, is_active=True
+        ).exists():
+            raise forms.ValidationError("This client is already a workspace member.")
+        if WorkspaceInvitation.objects.filter(
+            workspace=self.workspace,
+            invitee=invitee,
+            status=WorkspaceInvitation.Status.PENDING,
+        ).exists():
+            raise forms.ValidationError("This client is already invited.")
+        self.invitee = invitee
+        return username
 
 
 class TaskForm(forms.ModelForm):
@@ -59,15 +135,20 @@ class TaskForm(forms.ModelForm):
 
 
 class ProjectForm(forms.ModelForm):
-    """Validate project names for the authenticated client."""
+    """Validate project names and workspace access for the authenticated client."""
 
     class Meta:
         model = Project
-        fields = ("name", "description")
+        fields = ("workspace", "name", "description")
 
-    def __init__(self, *args: object, client: User, **kwargs: object) -> None:
+    def __init__(
+        self, *args: object, client: User, workspaces=None, **kwargs: object
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.client_user = client
+        self.fields["workspace"].required = False
+        if workspaces is not None:
+            self.fields["workspace"].queryset = workspaces
 
     def clean_name(self) -> str:
         """Reject duplicate project names for the current client."""
