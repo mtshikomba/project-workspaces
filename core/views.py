@@ -16,7 +16,7 @@ from django.views.generic import (
     UpdateView,
 )
 from django.contrib.auth.views import PasswordChangeView
-from typing import Iterable
+from typing import Iterable, Optional
 
 from core.forms import (
     ClientProfileForm,
@@ -266,11 +266,24 @@ class WorkspaceTaskCreateView(WorkspaceContextMixin, CreateView):
     form_class = TaskForm
     template_name = "core/workspace_task_form.html"
 
+    def get_project_context(self) -> Optional[Project]:
+        """Return the selected workspace project supplied by the route."""
+        project_id = self.request.GET.get("project")
+        if not project_id:
+            return None
+        project = Project.objects.filter(
+            pk=project_id, workspace=self.workspace
+        ).first()
+        if project is None:
+            raise Http404
+        return project
+
     def get_form_kwargs(self) -> dict[str, object]:
         """Limit project choices to the selected workspace."""
         kwargs = super().get_form_kwargs()
         kwargs["client"] = self.request.user
         kwargs["projects"] = Project.objects.filter(workspace=self.workspace)
+        kwargs["project_context"] = self.get_project_context()
         return kwargs
 
     def form_valid(self, form: TaskForm):
@@ -282,6 +295,7 @@ class WorkspaceTaskCreateView(WorkspaceContextMixin, CreateView):
         """Add selected workspace navigation context to the form."""
         context = super().get_context_data(**kwargs)
         context.update(self.workspace_context())
+        context["project_context"] = self.get_project_context()
         return context
 
     def get_success_url(self) -> str:

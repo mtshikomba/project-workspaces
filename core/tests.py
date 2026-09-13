@@ -1623,6 +1623,83 @@ class WorkspaceManagementContextTests(TestCase):
         self.assertContains(project_response, self.workspace.name)
         self.assertContains(task_response, self.workspace.name)
 
+    def test_workspace_project_context_prefills_task_create(self) -> None:
+        """Workspace project pages lock task creation to their project."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/tasks/new/?project={self.project.pk}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["project_context"], self.project)
+        self.assertContains(response, self.project.name)
+        self.assertContains(response, 'name="project"')
+        self.assertContains(response, "disabled")
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/tasks/new/?project={self.project.pk}",
+            {
+                "title": "Contextual company task",
+                "status": Task.Status.OUTSTANDING,
+                "priority": Task.Priority.MEDIUM,
+            },
+        )
+
+        self.assertRedirects(response, f"/workspaces/{self.workspace.pk}/tasks/")
+        self.assertTrue(
+            Task.objects.filter(
+                title="Contextual company task", project=self.project
+            ).exists()
+        )
+
+    def test_workspace_project_context_preserves_invalid_task_submission(self) -> None:
+        """Invalid contextual task submissions retain the project and values."""
+        self.client.force_login(self.member)
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/tasks/new/?project={self.project.pk}",
+            {
+                "title": "",
+                "description": "Keep this description",
+                "status": Task.Status.OUTSTANDING,
+                "priority": Task.Priority.HIGH,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["project_context"], self.project)
+        self.assertContains(response, self.project.name)
+        self.assertContains(response, "Keep this description")
+        self.assertContains(response, "This field is required")
+
+    def test_workspace_task_edit_form_uses_edit_actions(self) -> None:
+        """Workspace task edits preserve values and identify the edit action."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/edit/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Edit task")
+        self.assertContains(response, "Save changes")
+        self.assertContains(response, self.task.title)
+        self.assertContains(response, self.project.name)
+
+    def test_workspace_project_detail_links_task_creation_to_project(self) -> None:
+        """Workspace project details pass their project into task creation."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/"
+        )
+
+        self.assertContains(
+            response,
+            f"/workspaces/{self.workspace.pk}/tasks/new/?project={self.project.pk}",
+        )
+
     def test_client_overview_does_not_show_company_project(self) -> None:
         """The personal overview does not become a company management dashboard."""
         self.client.force_login(self.member)
