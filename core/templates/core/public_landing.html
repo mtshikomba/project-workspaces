@@ -20,30 +20,31 @@
                 <div class="public-hero__copy">
                     <p class="eyebrow">A calmer client workspace</p>
                     <h1 id="public-title">Project-based task management, clearly managed.</h1>
-                    <p class="intro-copy">Bring projects, priorities, progress, and collaborators into one focused workspace built for client work.</p>
+                    <p class="intro-copy">Bring projects, priorities, progress, and collaborators into one focused workspace built for client work. Start in your personal client overview, then enter a company workspace when you are invited.</p>
                     <div class="public-actions">
                         {% if user.is_authenticated %}<a class="primary-button" href="{% url 'client-landing' %}">Open workspace</a>{% else %}<a class="primary-button" href="{% url 'register' %}">Create your workspace</a><a class="secondary-button" href="{% url 'login' %}">Sign in</a>{% endif %}
                     </div>
                 </div>
                 <div class="public-hero__signal" aria-label="Workspace preview">
                     <span class="summary-label">Your work, in view</span>
-                    <strong>Projects</strong>
-                    <span>Tasks grouped by status, with the detail you need to move forward.</span>
+                    <strong>Personal overview</strong>
+                    <span>See your projects and tasks, then enter selected company workspaces from one client-focused home.</span>
                 </div>
             </section>
             <section class="public-features" aria-labelledby="feature-title">
                 <div class="section-heading"><div><p class="eyebrow">Built for momentum</p><h2 id="feature-title">Everything around the work</h2></div></div>
                 <div class="public-feature-grid">
-                    <article class="public-feature"><span class="feature-number">01</span><h3>Projects first</h3><p>Keep every task anchored to the project it belongs to, with a clear view of what is moving.</p></article>
-                    <article class="public-feature"><span class="feature-number">02</span><h3>Flexible progress</h3><p>Switch between status lanes and a detailed list view when you need a different way to scan the work.</p></article>
-                    <article class="public-feature"><span class="feature-number">03</span><h3>Work together</h3><p>Invite trusted clients to the right project and collaborate without opening up unrelated work.</p></article>
+                    <article class="public-feature"><span class="feature-number">01</span><h3>Personal client workspace</h3><p>Keep projects first, with every task anchored to the work it belongs to and a clear view of what is moving.</p></article>
+                    <article class="public-feature"><span class="feature-number">02</span><h3>Status lanes and list view</h3><p>Review task details and switch between status lanes and a detailed list when you need a different way to scan progress.</p></article>
+                    <article class="public-feature"><span class="feature-number">03</span><h3>Project invitations</h3><p>Invite trusted clients to the right project and collaborate without opening up unrelated work.</p></article>
+                    <article class="public-feature"><span class="feature-number">04</span><h3>Company workspaces</h3><p>Join through Workspace invitations, work with role-aware access, and enter the selected company workspace when it is time to manage shared work.</p></article>
                 </div>
             </section>
             <section class="public-cta" aria-labelledby="cta-title">
                 <div>
                     <p class="eyebrow">Ready to work together?</p>
                     <h2 id="cta-title">Give every project a clearer next step.</h2>
-                    <p>Start your workspace, organize the work, and bring the right clients into the conversation.</p>
+                    <p>Start your personal client overview, organize the work, and join company workspaces with the right people and access.</p>
                 </div>
                 {% if user.is_authenticated %}<a class="primary-button" href="{% url 'client-landing' %}">Open workspace</a>{% else %}<a class="primary-button" href="{% url 'register' %}">Create your workspace</a>{% endif %}
             </section>

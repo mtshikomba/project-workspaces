@@ -43,6 +43,18 @@ class PublicLandingPageTests(TestCase):
         self.assertContains(response, "Create an account")
         self.assertContains(response, "Project-based task management")
         self.assertContains(response, "Ready to work together?")
+        for feature in (
+            "Personal client workspace",
+            "Status lanes and list view",
+            "Project invitations",
+            "Company workspaces",
+            "Workspace invitations",
+            "role-aware access",
+        ):
+            with self.subTest(feature=feature):
+                self.assertContains(response, feature)
+        self.assertNotContains(response, "AI agents")
+        self.assertNotContains(response, "file uploads")
         self.assertContains(response, "Client tasks")
 
     def test_authenticated_users_can_continue_to_workspace(self) -> None:
@@ -56,6 +68,7 @@ class PublicLandingPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Open workspace")
+        self.assertContains(response, "personal client overview")
         self.assertContains(response, "/workspace/")
 
     def test_workspace_requires_client_access(self) -> None:
