@@ -113,9 +113,7 @@
                                     <strong>{{ membership.workspace.name }}</strong>
                                     <span>{{ membership.get_role_display }}</span>
                                 </div>
-                                {% if membership.role == 'admin' %}
-                                    <a class="secondary-button" href="{% url 'workspace-members' membership.workspace.pk %}">Manage members</a>
-                                {% endif %}
+                                <a class="secondary-button" href="{% url 'workspace-home' membership.workspace.pk %}">Enter workspace</a>
                             </article>
                         {% endfor %}
                     </div>

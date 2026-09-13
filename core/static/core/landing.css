@@ -13,6 +13,8 @@
 
 * { box-sizing: border-box; }
 
+:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+
 body {
     margin: 0;
     color: var(--ink);
@@ -166,6 +168,20 @@ h2 { margin-bottom: 0; font-size: 2.5rem; font-weight: 400; letter-spacing: -0.0
 .collaboration-panel .danger-button { min-height: 38px; padding: 10px 14px; }
 .project-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .workspace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.workspace-shell .topbar { gap: 18px; }
+.workspace-nav { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 16px; font: 700 0.72rem/1.2 Arial, sans-serif; }
+.workspace-nav a { color: var(--muted); text-decoration: none; }
+.workspace-nav a:hover, .workspace-nav a[aria-current="page"] { color: var(--teal); }
+.workspace-current { color: var(--ink); font-weight: 700; }
+.workspace-hero { padding: 68px 0 34px; }
+.workspace-hero h1 { margin-bottom: 14px; }
+.workspace-switcher { display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: var(--blue-wash); border: 1px solid var(--line); font: 700 0.75rem/1.2 Arial, sans-serif; text-transform: uppercase; }
+.workspace-switcher select { min-width: 220px; padding: 10px; color: var(--ink); background: var(--white); border: 1px solid var(--line); font: 0.9rem/1.2 Georgia, serif; text-transform: none; }
+.workspace-task-list { display: grid; background: var(--white); border: 1px solid var(--line); }
+.workspace-task-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border-top: 1px solid var(--line); text-decoration: none; }
+.workspace-task-row:first-child { border-top: 0; }
+.workspace-task-row strong { font-size: 1.05rem; font-weight: 400; }
+.workspace-task-row span { color: var(--muted); font: 0.75rem/1.2 Arial, sans-serif; }
 .workspace-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; padding: 20px; background: var(--white); border: 1px solid var(--line); }
 .workspace-card > div { display: grid; gap: 8px; min-width: 0; }
 .workspace-card strong { overflow-wrap: anywhere; font-size: 1.2rem; font-weight: 400; }
@@ -226,6 +242,12 @@ h2 { margin-bottom: 0; font-size: 2.5rem; font-weight: 400; letter-spacing: -0.0
     .detail-grid { grid-template-columns: 1fr; }
     .project-grid { grid-template-columns: 1fr; }
     .workspace-grid { grid-template-columns: 1fr; }
+    .workspace-shell .topbar { align-items: flex-start; flex-wrap: wrap; }
+    .workspace-nav { order: 3; justify-content: flex-start; width: 100%; overflow-x: auto; padding-bottom: 4px; }
+    .workspace-hero { padding: 52px 0 28px; }
+    .workspace-switcher { align-items: stretch; flex-direction: column; }
+    .workspace-switcher select { width: 100%; }
+    .workspace-task-row { align-items: flex-start; flex-direction: column; gap: 8px; }
     .workspace-card { align-items: stretch; flex-direction: column; }
     .workspace-card .secondary-button { width: 100%; }
     .workspace-member-list li { align-items: stretch; flex-direction: column; }

@@ -1,0 +1,8 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ workspace.name }} / {{ project.name }} | Client tasks</title><link rel="stylesheet" href="{% static 'core/landing.css' %}"></head>
+<body><div class="page-shell workspace-shell">
+<header class="topbar"><a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a><nav class="workspace-nav" aria-label="Workspace navigation"><span class="workspace-current">{{ workspace.name }}</span><a href="{% url 'client-landing' %}">Client overview</a><a href="{% url 'workspace-projects' workspace.pk %}" aria-current="page">Projects</a><a href="{% url 'workspace-tasks' workspace.pk %}">Tasks</a><a href="{% url 'workspace-members' workspace.pk %}">Members</a></nav><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></header>
+<main class="detail-panel project-page"><a class="back-link" href="{% url 'workspace-projects' workspace.pk %}">← Back to {{ workspace.name }} projects</a><p class="eyebrow">{{ workspace.name }} / Projects</p><h1>{{ project.name }}</h1>{% if project.description %}<p class="intro-copy">{{ project.description }}</p>{% endif %}<div class="detail-actions"><a class="primary-button" href="{% url 'workspace-task-create' workspace.pk %}">New task</a></div><section class="task-section"><div class="section-heading"><h2>Project tasks</h2><span class="task-count">{{ tasks|length }} task{{ tasks|length|pluralize }}</span></div>{% include "core/_task_views.html" %}</section></main>
+</div><script src="{% static 'core/task_board.js' %}" defer></script></body></html>
