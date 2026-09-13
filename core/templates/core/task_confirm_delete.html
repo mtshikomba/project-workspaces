@@ -9,7 +9,7 @@
 </head>
 <body class="auth-page action-page">
     <div class="page-shell">
-        <header class="topbar"><a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></header>
+        {% include "core/_authenticated_header.html" %}
     <main class="login-panel">
         <a class="back-link" href="{{ task.get_absolute_url }}">← Keep task</a>
         <p class="eyebrow">Delete task</p>

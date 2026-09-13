@@ -922,11 +922,22 @@ class ClientProjectInviteView(ClientProjectOwnerMixin, View):
     def get(self, request: HttpRequest, pk: int):
         """Render the owner invitation form and current membership states."""
         project = get_object_or_404(self.get_queryset(), pk=pk)
+        workspace = project.workspace
         return render(
             request,
             "core/project_collaborators.html",
             {
                 "project": project,
+                "workspace": (
+                    workspace
+                    if workspace and workspace.kind == Workspace.Kind.COMPANY
+                    else None
+                ),
+                "membership": (
+                    workspace.memberships.filter(user=request.user).first()
+                    if workspace and workspace.kind == Workspace.Kind.COMPANY
+                    else None
+                ),
                 "form": ProjectInviteForm(project=project, inviter=request.user),
                 "invitations": project.invitations.select_related("invitee"),
                 "memberships": project.memberships.filter(
@@ -944,10 +955,26 @@ class ClientProjectInviteView(ClientProjectOwnerMixin, View):
                 project=project, inviter=request.user, invitee=form.invitee
             )
             return redirect(project.get_absolute_url())
+        workspace = project.workspace
         return render(
             request,
             "core/project_collaborators.html",
-            {"project": project, "form": form, "invitations": [], "memberships": []},
+            {
+                "project": project,
+                "workspace": (
+                    workspace
+                    if workspace and workspace.kind == Workspace.Kind.COMPANY
+                    else None
+                ),
+                "membership": (
+                    workspace.memberships.filter(user=request.user).first()
+                    if workspace and workspace.kind == Workspace.Kind.COMPANY
+                    else None
+                ),
+                "form": form,
+                "invitations": [],
+                "memberships": [],
+            },
         )
 
 
