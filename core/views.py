@@ -3,6 +3,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.db.models import Count, F, Q, QuerySet
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.urls import reverse_lazy
@@ -23,10 +24,25 @@ from core.forms import (
     ProjectForm,
     ProjectInviteForm,
     TaskForm,
+    WorkspaceCreateForm,
+    WorkspaceInviteForm,
 )
 from django.contrib.auth.models import User
 
-from core.models import Project, ProjectInvitation, ProjectMembership, Task
+from core.models import (
+    Project,
+    ProjectInvitation,
+    ProjectMembership,
+    Task,
+    Workspace,
+    WorkspaceInvitation,
+    WorkspaceMembership,
+)
+from core.services import (
+    LastAdministratorError,
+    change_membership_role,
+    deactivate_membership,
+)
 
 
 def build_task_lanes(tasks: Iterable[Task]) -> list[dict[str, object]]:
@@ -57,6 +73,211 @@ class ClientRegistrationView(CreateView):
     form_class = ClientRegistrationForm
     template_name = "registration/register.html"
     success_url = "/accounts/login/"
+
+
+class WorkspaceCreateView(ClientAccessMixin, CreateView):
+    """Create a company workspace and make the creator its administrator."""
+
+    model = Workspace
+    form_class = WorkspaceCreateForm
+    template_name = "core/workspace_form.html"
+    success_url = reverse_lazy("client-landing")
+
+    def form_valid(self, form: WorkspaceCreateForm):
+        """Create the workspace and its initial admin atomically."""
+        with transaction.atomic():
+            form.instance.kind = Workspace.Kind.COMPANY
+            response = super().form_valid(form)
+            WorkspaceMembership.objects.create(
+                workspace=self.object,
+                user=self.request.user,
+                role=WorkspaceMembership.Role.ADMIN,
+            )
+        return response
+
+
+class WorkspaceAdminMixin(ClientAccessMixin):
+    """Restrict workspace management to active workspace administrators."""
+
+    def get_workspace(self, pk: int) -> Workspace:
+        """Return a company workspace administered by the current user."""
+        membership = (
+            WorkspaceMembership.objects.filter(
+                workspace_id=pk,
+                user=self.request.user,
+                role=WorkspaceMembership.Role.ADMIN,
+                is_active=True,
+                workspace__kind=Workspace.Kind.COMPANY,
+            )
+            .select_related("workspace")
+            .first()
+        )
+        if membership is None:
+            from django.core.exceptions import PermissionDenied
+
+            raise PermissionDenied
+        return membership.workspace
+
+
+class WorkspaceMemberListView(WorkspaceAdminMixin, View):
+    """Display company workspace members to an administrator."""
+
+    def get(self, request: HttpRequest, pk: int):
+        """Render the member management page."""
+        workspace = self.get_workspace(pk)
+        return render(
+            request,
+            "core/workspace_members.html",
+            {
+                "workspace": workspace,
+                "form": WorkspaceInviteForm(workspace=workspace, inviter=request.user),
+                "memberships": workspace.memberships.filter(
+                    is_active=True
+                ).select_related("user"),
+                "invitations": workspace.invitations.filter(
+                    status=WorkspaceInvitation.Status.PENDING
+                ).select_related("invitee"),
+            },
+        )
+
+
+class WorkspaceInviteView(WorkspaceAdminMixin, View):
+    """Create pending invitations for a company workspace."""
+
+    def post(self, request: HttpRequest, pk: int):
+        """Invite an eligible client to the administered workspace."""
+        workspace = self.get_workspace(pk)
+        form = WorkspaceInviteForm(
+            request.POST, workspace=workspace, inviter=request.user
+        )
+        if not form.is_valid():
+            return render(
+                request,
+                "core/workspace_members.html",
+                {
+                    "workspace": workspace,
+                    "form": form,
+                    "memberships": workspace.memberships.filter(
+                        is_active=True
+                    ).select_related("user"),
+                    "invitations": workspace.invitations.filter(
+                        status=WorkspaceInvitation.Status.PENDING
+                    ).select_related("invitee"),
+                },
+                status=200,
+            )
+        WorkspaceInvitation.objects.create(
+            workspace=workspace,
+            inviter=request.user,
+            invitee=form.invitee,
+        )
+        return redirect("client-landing")
+
+
+class WorkspaceMemberRemoveView(WorkspaceAdminMixin, View):
+    """Deactivate a company workspace member without deleting their account."""
+
+    def post(self, request: HttpRequest, pk: int, membership_id: int):
+        """Remove a member while preserving the last-admin invariant."""
+        workspace = self.get_workspace(pk)
+        membership = get_object_or_404(
+            WorkspaceMembership,
+            pk=membership_id,
+            workspace=workspace,
+            is_active=True,
+        )
+        try:
+            deactivate_membership(membership)
+        except LastAdministratorError:
+            return JsonResponse(
+                {"error": "A workspace needs an active admin."}, status=400
+            )
+        return redirect("client-landing")
+
+
+class WorkspaceMemberRoleView(WorkspaceAdminMixin, View):
+    """Change an active company workspace member's role."""
+
+    def post(self, request: HttpRequest, pk: int, membership_id: int):
+        """Update a member role without allowing the last admin to be demoted."""
+        workspace = self.get_workspace(pk)
+        membership = get_object_or_404(
+            WorkspaceMembership,
+            pk=membership_id,
+            workspace=workspace,
+            is_active=True,
+        )
+        role = request.POST.get("role")
+        valid_roles = {choice.value for choice in WorkspaceMembership.Role}
+        if role not in valid_roles:
+            return JsonResponse({"error": "Invalid workspace role."}, status=400)
+        try:
+            change_membership_role(membership, role)
+        except LastAdministratorError:
+            return JsonResponse(
+                {"error": "A workspace needs an active admin."}, status=400
+            )
+        return redirect("workspace-members", pk=workspace.pk)
+
+
+class WorkspaceInvitationAcceptView(ClientAccessMixin, View):
+    """Accept a pending company workspace invitation."""
+
+    def post(self, request: HttpRequest, pk: int):
+        """Create client membership and consume the invitation atomically."""
+        invitation = get_object_or_404(
+            WorkspaceInvitation,
+            pk=pk,
+            invitee=request.user,
+            status=WorkspaceInvitation.Status.PENDING,
+            workspace__kind=Workspace.Kind.COMPANY,
+        )
+        with transaction.atomic():
+            WorkspaceMembership.objects.update_or_create(
+                workspace=invitation.workspace,
+                user=request.user,
+                defaults={
+                    "role": WorkspaceMembership.Role.CLIENT,
+                    "is_active": True,
+                },
+            )
+            invitation.status = WorkspaceInvitation.Status.ACCEPTED
+            invitation.accepted_at = timezone.now()
+            invitation.save(update_fields=["status", "accepted_at"])
+        return redirect("client-landing")
+
+
+class WorkspaceInvitationDeclineView(ClientAccessMixin, View):
+    """Decline a pending company workspace invitation."""
+
+    def post(self, request: HttpRequest, pk: int):
+        """Mark the intended recipient's invitation as declined."""
+        invitation = get_object_or_404(
+            WorkspaceInvitation,
+            pk=pk,
+            invitee=request.user,
+            status=WorkspaceInvitation.Status.PENDING,
+        )
+        invitation.status = WorkspaceInvitation.Status.DECLINED
+        invitation.save(update_fields=["status"])
+        return redirect("client-landing")
+
+
+class WorkspaceInvitationRevokeView(WorkspaceAdminMixin, View):
+    """Revoke a pending invitation from an administered company workspace."""
+
+    def post(self, request: HttpRequest, pk: int, invitation_id: int):
+        """Mark a pending workspace invitation as revoked."""
+        workspace = self.get_workspace(pk)
+        invitation = get_object_or_404(
+            WorkspaceInvitation,
+            pk=invitation_id,
+            workspace=workspace,
+            status=WorkspaceInvitation.Status.PENDING,
+        )
+        invitation.status = WorkspaceInvitation.Status.REVOKED
+        invitation.save(update_fields=["status"])
+        return redirect("client-landing")
 
 
 class ClientProfileView(ClientAccessMixin, UpdateView):
@@ -117,6 +338,15 @@ class ClientLandingPageView(ClientAccessMixin, TemplateView):
             invitee=self.request.user,
             status=ProjectInvitation.Status.PENDING,
         ).select_related("project", "inviter")
+        context["pending_workspace_invitations"] = WorkspaceInvitation.objects.filter(
+            invitee=self.request.user,
+            status=WorkspaceInvitation.Status.PENDING,
+        ).select_related("workspace", "inviter")
+        context["company_workspaces"] = WorkspaceMembership.objects.filter(
+            workspace__kind=Workspace.Kind.COMPANY,
+            user=self.request.user,
+            is_active=True,
+        ).select_related("workspace")
         context["tasks"] = tasks
         context["task_lanes"] = build_task_lanes(tasks)
         context["task_statuses"] = Task.Status.choices
@@ -188,6 +418,10 @@ class ClientTaskQuerysetMixin(ClientAccessMixin):
                 project__memberships__user=self.request.user,
                 project__memberships__is_active=True,
             )
+            | Q(
+                project__workspace__memberships__user=self.request.user,
+                project__workspace__memberships__is_active=True,
+            )
             | Q(project__client=self.request.user, client=F("project__client"))
         ).distinct()
 
@@ -246,7 +480,18 @@ class ClientTaskDeleteView(ClientTaskQuerysetMixin, DeleteView):
 
     def get_queryset(self) -> QuerySet[Task]:
         """Return only tasks owned by the authenticated client for deletion."""
-        return Task.objects.filter(client=self.request.user)
+        return (
+            super()
+            .get_queryset()
+            .filter(
+                Q(client=self.request.user)
+                | Q(
+                    project__workspace__memberships__user=self.request.user,
+                    project__workspace__memberships__is_active=True,
+                )
+            )
+            .distinct()
+        )
 
 
 class ClientProjectQuerysetMixin(ClientAccessMixin):
@@ -260,18 +505,44 @@ class ClientProjectQuerysetMixin(ClientAccessMixin):
 
 
 def accessible_projects(user: User) -> QuerySet[Project]:
-    """Return projects the client owns or has actively joined."""
+    """Return projects owned by or shared with the authenticated user."""
     return Project.objects.filter(
-        Q(client=user) | Q(memberships__user=user, memberships__is_active=True)
+        Q(client=user)
+        | Q(memberships__user=user, memberships__is_active=True)
+        | Q(workspace__memberships__user=user, workspace__memberships__is_active=True)
+    ).distinct()
+
+
+def project_workspaces(user: User) -> QuerySet[Workspace]:
+    """Return personal workspaces and company workspaces administered by a user."""
+    return Workspace.objects.filter(
+        Q(
+            kind=Workspace.Kind.PERSONAL,
+            memberships__user=user,
+            memberships__is_active=True,
+        )
+        | Q(
+            kind=Workspace.Kind.COMPANY,
+            memberships__user=user,
+            memberships__role=WorkspaceMembership.Role.ADMIN,
+            memberships__is_active=True,
+        )
     ).distinct()
 
 
 class ClientProjectOwnerMixin(ClientAccessMixin):
-    """Restrict project management to the immutable project owner."""
+    """Restrict project management to owners and workspace administrators."""
 
     def get_queryset(self) -> QuerySet[Project]:
-        """Return only projects owned by the authenticated client."""
-        return Project.objects.filter(client=self.request.user)
+        """Return projects owned by or administered by the current user."""
+        return Project.objects.filter(
+            Q(client=self.request.user)
+            | Q(
+                workspace__memberships__user=self.request.user,
+                workspace__memberships__role=WorkspaceMembership.Role.ADMIN,
+                workspace__memberships__is_active=True,
+            )
+        ).distinct()
 
 
 class ClientProjectListView(ClientProjectQuerysetMixin, TemplateView):
@@ -287,21 +558,28 @@ class ClientProjectListView(ClientProjectQuerysetMixin, TemplateView):
 
 
 class ClientProjectCreateView(ClientAccessMixin, CreateView):
-    """Create a project owned by the authenticated client."""
+    """Create a project in an accessible personal or company workspace."""
 
     model = Project
     form_class = ProjectForm
     template_name = "core/project_form.html"
 
     def get_form_kwargs(self) -> dict[str, object]:
-        """Pass the authenticated client to project validation."""
+        """Pass the authenticated client and writable workspaces to the form."""
         kwargs = super().get_form_kwargs()
         kwargs["client"] = self.request.user
+        kwargs["workspaces"] = project_workspaces(self.request.user)
         return kwargs
 
     def form_valid(self, form):
-        """Set project ownership from the authenticated user."""
+        """Set project ownership and preserve a personal fallback for legacy users."""
         form.instance.client = self.request.user
+        if form.cleaned_data.get("workspace") is None:
+            form.instance.workspace = (
+                project_workspaces(self.request.user)
+                .filter(kind=Workspace.Kind.PERSONAL)
+                .first()
+            )
         return super().form_valid(form)
 
 
@@ -331,9 +609,10 @@ class ClientProjectUpdateView(ClientProjectOwnerMixin, UpdateView):
     template_name = "core/project_form.html"
 
     def get_form_kwargs(self) -> dict[str, object]:
-        """Pass the authenticated client to project validation."""
+        """Pass the authenticated client and writable workspaces to the form."""
         kwargs = super().get_form_kwargs()
         kwargs["client"] = self.request.user
+        kwargs["workspaces"] = project_workspaces(self.request.user)
         return kwargs
 
 

@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ workspace.name }} members</title>
+    <link rel="stylesheet" href="{% static 'core/landing.css' %}">
+</head>
+<body class="auth-page action-page">
+    <div class="page-shell">
+        <header class="topbar">
+            <a class="brand" href="{% url 'client-landing' %}">
+                <span class="brand-mark">CT</span>
+                <span>Client tasks</span>
+            </a>
+            <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button class="text-button" type="submit">Sign out</button>
+            </form>
+        </header>
+        <main class="login-panel task-form-panel">
+        <a class="back-link" href="{% url 'client-landing' %}">← Back to workspace</a>
+        <p class="eyebrow">Company collaboration</p>
+        <h1>{{ workspace.name }} members</h1>
+        <form method="post" action="{% url 'workspace-invite' workspace.pk %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="primary-button primary-button--full" type="submit">Invite client</button>
+        </form>
+        <section class="workspace-member-section" aria-labelledby="member-list-title">
+            <h2 id="member-list-title">Active members</h2>
+            <ul class="workspace-member-list">
+            {% for membership in memberships %}
+                <li>
+                    <span>{{ membership.user.username }} ({{ membership.get_role_display }})</span>
+                    <div class="workspace-member-actions">
+                        <form method="post" action="{% url 'workspace-member-role' workspace.pk membership.pk %}">
+                            {% csrf_token %}
+                            <label class="sr-only" for="role-{{ membership.pk }}">Role for {{ membership.user.username }}</label>
+                            <select id="role-{{ membership.pk }}" name="role" onchange="this.form.submit()">
+                                <option value="client"{% if membership.role == 'client' %} selected{% endif %}>Client</option>
+                                <option value="admin"{% if membership.role == 'admin' %} selected{% endif %}>Admin</option>
+                            </select>
+                        </form>
+                        {% if membership.user_id != user.id %}
+                            <form method="post" action="{% url 'workspace-member-remove' workspace.pk membership.pk %}">
+                            {% csrf_token %}
+                            <button class="danger-button" type="submit" onclick="return confirm('Are you sure you want to remove this member?');">Remove</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </li>
+            {% endfor %}
+            </ul>
+        </section>
+        <section class="workspace-member-section" aria-labelledby="pending-list-title">
+            <h2 id="pending-list-title">Pending invitations</h2>
+            <ul class="workspace-member-list">
+            {% for invitation in invitations %}
+                <li>
+                    <span>{{ invitation.invitee.username }}</span>
+                    <form method="post" action="{% url 'workspace-invitation-revoke' workspace.pk invitation.pk %}">
+                        {% csrf_token %}
+                        <button class="danger-button" type="submit" onclick="return confirm('Are you sure you want to revoke this invitation?');">Revoke</button>
+                    </form>
+                </li>
+            {% empty %}
+                <li>No pending invitations.</li>
+            {% endfor %}
+            </ul>
+        </section>
+        </main>
+    </div>
+</body>
+</html>

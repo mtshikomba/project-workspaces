@@ -70,6 +70,60 @@
                 {% endfor %}
             </section>
 
+            <section class="invitation-panel" aria-labelledby="workspace-invitation-title">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Company collaboration</p>
+                        <h2 id="workspace-invitation-title">Workspace invitations</h2>
+                    </div>
+                    <a class="secondary-button" href="{% url 'workspace-create' %}">Create company workspace</a>
+                </div>
+                {% for invitation in pending_workspace_invitations %}
+                    <article class="invitation-row">
+                        <div>
+                            <strong>{{ invitation.workspace.name }}</strong>
+                            <span>Invited by {{ invitation.inviter.username }}</span>
+                        </div>
+                        <form method="post" action="{% url 'workspace-invitation-accept' invitation.pk %}">
+                            {% csrf_token %}
+                            <button class="primary-button" type="submit">Accept invitation</button>
+                        </form>
+                        <form method="post" action="{% url 'workspace-invitation-decline' invitation.pk %}">
+                            {% csrf_token %}
+                            <button class="secondary-button" type="submit">Decline</button>
+                        </form>
+                    </article>
+                {% empty %}
+                    <p class="form-note">No pending workspace invitations.</p>
+                {% endfor %}
+            </section>
+
+            <section class="task-section" aria-labelledby="company-workspace-title">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Company collaboration</p>
+                        <h2 id="company-workspace-title">Your company workspaces</h2>
+                    </div>
+                </div>
+                {% if company_workspaces %}
+                    <div class="workspace-grid">
+                        {% for membership in company_workspaces %}
+                            <article class="workspace-card">
+                                <div>
+                                    <strong>{{ membership.workspace.name }}</strong>
+                                    <span>{{ membership.get_role_display }}</span>
+                                </div>
+                                {% if membership.role == 'admin' %}
+                                    <a class="secondary-button" href="{% url 'workspace-members' membership.workspace.pk %}">Manage members</a>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="form-note">You have not joined a company workspace yet.</p>
+                {% endif %}
+            </section>
+
             <section class="task-section" id="task-list" aria-labelledby="task-list-title">
                 <div class="section-heading">
                     <div>

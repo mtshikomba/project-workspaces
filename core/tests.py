@@ -3,7 +3,20 @@ from django.contrib.auth.models import Group
 from django.test import Client as TestClient
 from django.test import TestCase
 
-from core.models import Project, ProjectInvitation, ProjectMembership, Task
+from core.models import (
+    Project,
+    ProjectInvitation,
+    ProjectMembership,
+    Task,
+    Workspace,
+    WorkspaceInvitation,
+    WorkspaceMembership,
+)
+from core.services import (
+    LastAdministratorError,
+    change_membership_role,
+    deactivate_membership,
+)
 
 
 class HealthCheckViewTests(TestCase):
@@ -171,6 +184,13 @@ class ClientRegistrationTests(TestCase):
         self.assertTrue(user.groups.filter(name="Client").exists())
         self.assertFalse(user.is_staff)
         self.assertFalse(user.is_superuser)
+        self.assertTrue(
+            Workspace.objects.filter(
+                kind=Workspace.Kind.PERSONAL,
+                memberships__user=user,
+                memberships__role=WorkspaceMembership.Role.ADMIN,
+            ).exists()
+        )
 
     def test_invalid_registration_does_not_create_user(self) -> None:
         """Invalid passwords re-render errors without creating a user."""
@@ -915,3 +935,423 @@ class ProjectCollaborationTests(TestCase):
         response = self.client.get("/workspace/")
 
         self.assertContains(response, self.project.name)
+
+
+class WorkspaceTests(TestCase):
+    """Verify company workspace lifecycle and authorization boundaries."""
+
+    def setUp(self) -> None:
+        self.client_group = Group.objects.create(name="Client")
+        self.admin = User.objects.create_user(
+            username="company-admin", password="test-password"
+        )
+        self.admin.groups.add(self.client_group)
+        self.client_user = User.objects.create_user(
+            username="company-client", password="test-password"
+        )
+        self.client_user.groups.add(self.client_group)
+        self.outsider = User.objects.create_user(
+            username="company-outsider", password="test-password"
+        )
+        self.outsider.groups.add(self.client_group)
+        self.client.force_login(self.admin)
+
+    def test_admin_can_create_company_workspace(self) -> None:
+        """Creating a company workspace assigns the creator as its admin."""
+        response = self.client.post(
+            "/workspaces/new/", {"name": "Acme Studio", "kind": "company"}
+        )
+
+        workspace = Workspace.objects.get(name="Acme Studio")
+        self.assertRedirects(response, "/workspace/")
+        self.assertTrue(
+            WorkspaceMembership.objects.filter(
+                workspace=workspace,
+                user=self.admin,
+                role=WorkspaceMembership.Role.ADMIN,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_workspace_landing_lists_active_company_workspaces(self) -> None:
+        """A member can see active company workspaces from the landing page."""
+        workspace = Workspace.objects.create(
+            name="Visible Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.get("/workspace/")
+
+        self.assertContains(response, "Your company workspaces")
+        self.assertContains(response, workspace.name)
+        self.assertContains(response, f"/workspaces/{workspace.pk}/members/")
+
+    def test_workspace_creation_page_uses_shared_action_form_shell(self) -> None:
+        """The workspace form matches the established authenticated form layout."""
+        response = self.client.get("/workspaces/new/")
+
+        self.assertContains(response, '<body class="auth-page action-page">')
+        self.assertContains(response, 'class="topbar"')
+        self.assertContains(response, 'class="login-panel task-form-panel"')
+        self.assertContains(response, 'class="eyebrow"')
+        self.assertContains(response, "primary-button--full")
+
+    def test_admin_can_invite_client_to_company_workspace(self) -> None:
+        """An administrator can create a pending workspace invitation."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.post(
+            f"/workspaces/{workspace.pk}/members/invite/",
+            {"username": self.client_user.username},
+        )
+
+        self.assertRedirects(response, "/workspace/")
+        invitation = WorkspaceInvitation.objects.get(workspace=workspace)
+        self.assertEqual(invitation.invitee, self.client_user)
+        self.assertTrue(invitation.is_pending)
+
+    def test_client_can_accept_workspace_invitation(self) -> None:
+        """Accepting an invitation creates an active client membership."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        invitation = WorkspaceInvitation.objects.create(
+            workspace=workspace, inviter=self.admin, invitee=self.client_user
+        )
+
+        self.client.force_login(self.client_user)
+        response = self.client.post(f"/workspace-invitations/{invitation.pk}/accept/")
+
+        self.assertRedirects(response, "/workspace/")
+        self.assertTrue(
+            WorkspaceMembership.objects.filter(
+                workspace=workspace,
+                user=self.client_user,
+                role=WorkspaceMembership.Role.CLIENT,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_client_workspace_shows_pending_company_invitation(self) -> None:
+        """A client can discover pending company invitations from the workspace."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        WorkspaceInvitation.objects.create(
+            workspace=workspace, inviter=self.admin, invitee=self.client_user
+        )
+
+        self.client.force_login(self.client_user)
+        response = self.client.get("/workspace/")
+
+        self.assertContains(response, "Workspace invitations")
+        self.assertContains(response, workspace.name)
+
+    def test_client_can_decline_workspace_invitation(self) -> None:
+        """Declining an invitation leaves the client outside the workspace."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        invitation = WorkspaceInvitation.objects.create(
+            workspace=workspace, inviter=self.admin, invitee=self.client_user
+        )
+
+        self.client.force_login(self.client_user)
+        response = self.client.post(f"/workspace-invitations/{invitation.pk}/decline/")
+
+        self.assertRedirects(response, "/workspace/")
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, WorkspaceInvitation.Status.DECLINED)
+        self.assertFalse(
+            WorkspaceMembership.objects.filter(
+                workspace=workspace, user=self.client_user, is_active=True
+            ).exists()
+        )
+
+    def test_admin_can_revoke_workspace_invitation(self) -> None:
+        """An administrator can revoke a pending workspace invitation."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        invitation = WorkspaceInvitation.objects.create(
+            workspace=workspace, inviter=self.admin, invitee=self.client_user
+        )
+
+        response = self.client.post(
+            f"/workspaces/{workspace.pk}/members/invitations/{invitation.pk}/revoke/"
+        )
+
+        self.assertRedirects(response, "/workspace/")
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, WorkspaceInvitation.Status.REVOKED)
+
+    def test_client_cannot_manage_company_members(self) -> None:
+        """Company clients cannot access administrator member controls."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.client_user,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+
+        self.client.force_login(self.client_user)
+        response = self.client.get(f"/workspaces/{workspace.pk}/members/")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_member_page_exposes_invitation_form(self) -> None:
+        """Administrators can see the client invitation input on the member page."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.get(f"/workspaces/{workspace.pk}/members/")
+
+        self.assertContains(response, 'name="username"')
+        self.assertContains(response, "Invite client")
+
+    def test_admin_member_page_exposes_remove_and_revoke_controls(self) -> None:
+        """Administrators can see controls for members and pending invitations."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        member = WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.client_user,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+        invitation = WorkspaceInvitation.objects.create(
+            workspace=workspace, inviter=self.admin, invitee=self.outsider
+        )
+
+        response = self.client.get(f"/workspaces/{workspace.pk}/members/")
+
+        self.assertContains(
+            response,
+            f"/workspaces/{workspace.pk}/members/{member.pk}/remove/",
+        )
+        self.assertContains(
+            response,
+            f"/workspaces/{workspace.pk}/members/invitations/{invitation.pk}/revoke/",
+        )
+        self.assertContains(response, "Are you sure")
+
+    def test_last_admin_cannot_be_removed(self) -> None:
+        """The final active company administrator cannot be removed."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        membership = WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.post(
+            f"/workspaces/{workspace.pk}/members/{membership.pk}/remove/"
+        )
+
+        self.assertEqual(response.status_code, 400)
+        membership.refresh_from_db()
+        self.assertTrue(membership.is_active)
+
+    def test_admin_can_promote_member_to_admin(self) -> None:
+        """An administrator can promote an active client member."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        membership = WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.client_user,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+
+        response = self.client.post(
+            f"/workspaces/{workspace.pk}/members/{membership.pk}/role/",
+            {"role": WorkspaceMembership.Role.ADMIN},
+        )
+
+        self.assertRedirects(response, f"/workspaces/{workspace.pk}/members/")
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, WorkspaceMembership.Role.ADMIN)
+
+    def test_last_admin_cannot_be_demoted(self) -> None:
+        """The final active administrator cannot be demoted to client."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        membership = WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        response = self.client.post(
+            f"/workspaces/{workspace.pk}/members/{membership.pk}/role/",
+            {"role": WorkspaceMembership.Role.CLIENT},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, WorkspaceMembership.Role.ADMIN)
+
+    def test_membership_service_protects_last_admin(self) -> None:
+        """The membership service protects the invariant outside HTTP views."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        membership = WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+
+        with self.assertRaises(LastAdministratorError):
+            change_membership_role(membership, WorkspaceMembership.Role.CLIENT)
+        with self.assertRaises(LastAdministratorError):
+            deactivate_membership(membership)
+
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, WorkspaceMembership.Role.ADMIN)
+        self.assertTrue(membership.is_active)
+
+    def test_outsider_cannot_view_company_workspace_members(self) -> None:
+        """Users outside a company workspace cannot inspect its members."""
+        workspace = Workspace.objects.create(
+            name="Acme Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        self.client.force_login(self.outsider)
+
+        response = self.client.get(f"/workspaces/{workspace.pk}/members/")
+
+        self.assertEqual(response.status_code, 403)
+
+
+class WorkspaceProjectAuthorizationTests(TestCase):
+    """Verify project access through active company workspace membership."""
+
+    def setUp(self) -> None:
+        self.client_group = Group.objects.create(name="Client")
+        self.admin = User.objects.create_user(
+            username="workspace-project-admin", password="test-password"
+        )
+        self.admin.groups.add(self.client_group)
+        self.member = User.objects.create_user(
+            username="workspace-project-member", password="test-password"
+        )
+        self.member.groups.add(self.client_group)
+        self.outsider = User.objects.create_user(
+            username="workspace-project-outsider", password="test-password"
+        )
+        self.outsider.groups.add(self.client_group)
+        self.workspace = Workspace.objects.create(
+            name="Client Delivery", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.member,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+
+    def test_company_admin_can_create_project_in_company_workspace(self) -> None:
+        """An administrator can create a project assigned to the company workspace."""
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            "/projects/new/",
+            {
+                "name": "Client launch",
+                "description": "Shared delivery work",
+                "workspace": self.workspace.pk,
+            },
+        )
+
+        project = Project.objects.get(name="Client launch")
+        self.assertRedirects(response, project.get_absolute_url())
+        self.assertEqual(project.workspace, self.workspace)
+
+    def test_company_member_can_view_workspace_project_without_project_membership(
+        self,
+    ) -> None:
+        """Workspace membership grants project visibility without project membership."""
+        project = Project.objects.create(
+            client=self.admin, workspace=self.workspace, name="Shared delivery"
+        )
+        self.client.force_login(self.member)
+
+        self.assertEqual(self.client.get(project.get_absolute_url()).status_code, 200)
+        self.assertContains(self.client.get("/projects/"), project.name)
+
+    def test_non_member_cannot_view_company_workspace_project(self) -> None:
+        """A user outside the company workspace cannot access its project."""
+        project = Project.objects.create(
+            client=self.admin, workspace=self.workspace, name="Private delivery"
+        )
+        self.client.force_login(self.outsider)
+
+        self.assertEqual(self.client.get(project.get_absolute_url()).status_code, 404)
+        self.assertEqual(self.client.get("/projects/").status_code, 200)
+        self.assertNotContains(self.client.get("/projects/"), project.name)
