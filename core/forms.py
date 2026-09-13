@@ -175,6 +175,12 @@ class ProjectForm(forms.ModelForm):
             )
             self.fields["workspace"].initial = workspace_context.pk
             self.fields["workspace"].disabled = True
+        if self.is_bound:
+            for field_name, field in self.fields.items():
+                if self.errors.get(field_name):
+                    field.widget.attrs["aria-invalid"] = "true"
+                    field_id = self[field_name].auto_id
+                    field.widget.attrs["aria-describedby"] = f"{field_id}-error"
 
     def clean_name(self) -> str:
         """Reject duplicate project names for the current client."""

@@ -847,6 +847,11 @@ class ClientProjectManagementTests(TestCase):
             ).count(),
             1,
         )
+        self.assertContains(response, 'name="name"')
+        self.assertContains(response, 'aria-invalid="true"')
+        self.assertContains(response, 'aria-describedby="id_name-error"')
+        self.assertContains(response, 'id="id_name-error"')
+        self.assertContains(response, "form_validation.js")
 
     def test_client_cannot_access_other_clients_project(self) -> None:
         """Project detail, edit, and delete are owner-scoped."""
@@ -1676,6 +1681,9 @@ class WorkspaceManagementContextTests(TestCase):
         self.assertEqual(
             response.context["form"]["workspace"].value(), self.workspace.pk
         )
+        self.assertContains(response, 'aria-invalid="true"')
+        self.assertContains(response, 'aria-describedby="id_name-error"')
+        self.assertContains(response, 'id="id_name-error"')
 
     def test_workspace_project_list_links_to_project_detail(self) -> None:
         """Workspace project cards open the selected project context."""

@@ -1,5 +1,26 @@
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% if object %}Edit project{% else %}New project{% endif %} | Client tasks</title><link rel="stylesheet" href="{% static 'core/landing.css' %}"></head>
-<body class="auth-page action-page"><div class="page-shell">{% include "core/_authenticated_header.html" %}<main class="login-panel task-form-panel"><a class="back-link" href="{% url 'project-list' %}">← Back to projects</a><p class="eyebrow">Project-first workflow</p><h1>{% if object %}Edit project{% else %}Create a project{% endif %}</h1><form method="post">{% csrf_token %}{{ form.as_p }}<button class="primary-button primary-button--full" type="submit">{% if object %}Save changes{% else %}Create project{% endif %}</button></form></main></div></body></html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{% if object %}Edit project{% else %}New project{% endif %} | Client tasks</title>
+	<link rel="stylesheet" href="{% static 'core/landing.css' %}">
+</head>
+<body class="auth-page action-page">
+	<div class="page-shell">
+		{% include "core/_authenticated_header.html" %}
+		<main class="login-panel task-form-panel">
+			<a class="back-link" href="{% url 'project-list' %}">← Back to projects</a>
+			<p class="eyebrow">Project-first workflow</p>
+			<h1>{% if object %}Edit project{% else %}Create a project{% endif %}</h1>
+			<form method="post">
+				{% csrf_token %}
+				{% include "core/_project_form_fields.html" %}
+				<button class="primary-button primary-button--full" type="submit">{% if object %}Save changes{% else %}Create project{% endif %}</button>
+			</form>
+		</main>
+	</div>
+	<script src="{% static 'core/form_validation.js' %}" defer></script>
+</body>
+</html>
