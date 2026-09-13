@@ -988,7 +988,7 @@ class WorkspaceTests(TestCase):
 
         self.assertContains(response, "Your company workspaces")
         self.assertContains(response, workspace.name)
-        self.assertContains(response, f"/workspaces/{workspace.pk}/members/")
+        self.assertContains(response, f"/workspaces/{workspace.pk}/")
 
     def test_workspace_creation_page_uses_shared_action_form_shell(self) -> None:
         """The workspace form matches the established authenticated form layout."""
@@ -1355,3 +1355,218 @@ class WorkspaceProjectAuthorizationTests(TestCase):
         self.assertEqual(self.client.get(project.get_absolute_url()).status_code, 404)
         self.assertEqual(self.client.get("/projects/").status_code, 200)
         self.assertNotContains(self.client.get("/projects/"), project.name)
+
+
+class WorkspaceManagementContextTests(TestCase):
+    """Verify company management stays inside the selected workspace context."""
+
+    def setUp(self) -> None:
+        self.client_group = Group.objects.create(name="Client")
+        self.admin = User.objects.create_user(
+            username="context-admin", password="test-password"
+        )
+        self.admin.groups.add(self.client_group)
+        self.member = User.objects.create_user(
+            username="context-member", password="test-password"
+        )
+        self.member.groups.add(self.client_group)
+        self.outsider = User.objects.create_user(
+            username="context-outsider", password="test-password"
+        )
+        self.outsider.groups.add(self.client_group)
+        self.workspace = Workspace.objects.create(
+            name="Selected Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.admin,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.member,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+        self.project = Project.objects.create(
+            client=self.admin,
+            workspace=self.workspace,
+            name="Company project",
+        )
+        self.task = Task.objects.create(
+            client=self.admin,
+            project=self.project,
+            title="Company task",
+        )
+
+    def test_workspace_home_shows_selected_context_and_navigation(self) -> None:
+        """A member enters a company shell that identifies the selected workspace."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.workspace.name)
+        self.assertContains(response, "Company project")
+        self.assertContains(response, "Client overview")
+        self.assertContains(response, f"/workspaces/{self.workspace.pk}/projects/")
+        self.assertContains(response, f"/workspaces/{self.workspace.pk}/tasks/")
+
+    def test_company_project_and_task_pages_are_workspace_scoped(self) -> None:
+        """Company project and task lists stay inside the selected workspace."""
+        self.client.force_login(self.member)
+
+        project_response = self.client.get(f"/workspaces/{self.workspace.pk}/projects/")
+        task_response = self.client.get(f"/workspaces/{self.workspace.pk}/tasks/")
+
+        self.assertContains(project_response, self.project.name)
+        self.assertContains(task_response, self.task.title)
+        self.assertContains(
+            project_response, f"/workspaces/{self.workspace.pk}/projects/new/"
+        )
+        self.assertContains(
+            task_response, f"/workspaces/{self.workspace.pk}/tasks/new/"
+        )
+        self.assertContains(task_response, 'data-task-view="lanes"')
+        self.assertContains(task_response, 'data-task-view="list"')
+        self.assertContains(
+            task_response,
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/status/",
+        )
+
+        project_detail_response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/"
+        )
+        self.assertContains(project_detail_response, "Project tasks")
+        self.assertContains(project_detail_response, 'data-task-view="lanes"')
+
+    def test_company_project_creation_preserves_selected_workspace(self) -> None:
+        """A company admin creates projects through the selected workspace route."""
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/projects/new/",
+            {"name": "Context project", "description": "Scoped work"},
+        )
+
+        project = Project.objects.get(name="Context project")
+        self.assertRedirects(response, f"/workspaces/{self.workspace.pk}/projects/")
+        self.assertEqual(project.workspace, self.workspace)
+
+    def test_workspace_create_forms_render_selected_context(self) -> None:
+        """Workspace project and task forms render without losing route context."""
+        self.client.force_login(self.admin)
+
+        project_response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/projects/new/"
+        )
+        task_response = self.client.get(f"/workspaces/{self.workspace.pk}/tasks/new/")
+
+        self.assertEqual(project_response.status_code, 200)
+        self.assertEqual(task_response.status_code, 200)
+        self.assertContains(project_response, self.workspace.name)
+        self.assertContains(task_response, self.workspace.name)
+
+    def test_client_overview_does_not_show_company_project(self) -> None:
+        """The personal overview does not become a company management dashboard."""
+        self.client.force_login(self.member)
+
+        response = self.client.get("/workspace/")
+
+        self.assertNotContains(response, self.project.name)
+        self.assertNotContains(response, self.task.title)
+        self.assertContains(response, self.workspace.name)
+
+    def test_non_member_cannot_enter_selected_workspace(self) -> None:
+        """A non-member cannot access or enumerate the selected workspace."""
+        self.client.force_login(self.outsider)
+
+        for path in (
+            f"/workspaces/{self.workspace.pk}/",
+            f"/workspaces/{self.workspace.pk}/projects/",
+            f"/workspaces/{self.workspace.pk}/tasks/",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(self.client.get(path).status_code, (403, 404))
+
+    def test_workspace_switcher_lists_active_memberships(self) -> None:
+        """The selected workspace shell exposes other active workspaces."""
+        second_workspace = Workspace.objects.create(
+            name="Second Studio", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=second_workspace,
+            user=self.member,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+        self.client.force_login(self.member)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/")
+
+        self.assertContains(response, second_workspace.name)
+        self.assertContains(response, f"/workspaces/{second_workspace.pk}/")
+
+    def test_company_task_detail_and_mutations_stay_in_workspace(self) -> None:
+        """Company task detail and mutations preserve the selected workspace."""
+        self.client.force_login(self.member)
+
+        detail_response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/"
+        )
+        update_response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/edit/",
+            {
+                "project": self.project.pk,
+                "title": "Updated company task",
+                "status": Task.Status.IN_PROGRESS,
+                "priority": Task.Priority.HIGH,
+                "due_date": "",
+            },
+        )
+        status_response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/status/",
+            {"status": Task.Status.COMPLETED},
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertRedirects(
+            update_response,
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/",
+        )
+        self.assertEqual(status_response.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, Task.Status.COMPLETED)
+
+    def test_non_member_cannot_use_workspace_task_routes(self) -> None:
+        """A non-member cannot read or mutate a company task through scoped routes."""
+        self.client.force_login(self.outsider)
+
+        for path in (
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/",
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/edit/",
+            f"/workspaces/{self.workspace.pk}/tasks/{self.task.pk}/delete/",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(self.client.get(path).status_code, (403, 404))
+
+    def test_admin_can_manage_workspace_settings(self) -> None:
+        """Only an administrator can view and update selected workspace settings."""
+        self.client.force_login(self.admin)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/settings/")
+        update_response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/settings/",
+            {"name": "Renamed Studio"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(update_response, f"/workspaces/{self.workspace.pk}/")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.name, "Renamed Studio")
+
+    def test_client_cannot_manage_workspace_settings(self) -> None:
+        """Company clients cannot access administrator-only settings."""
+        self.client.force_login(self.member)
+
+        response = self.client.get(f"/workspaces/{self.workspace.pk}/settings/")
+
+        self.assertEqual(response.status_code, 403)

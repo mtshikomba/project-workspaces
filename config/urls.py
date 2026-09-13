@@ -52,12 +52,78 @@ from core.views import (
     WorkspaceMemberListView,
     WorkspaceMemberRemoveView,
     WorkspaceMemberRoleView,
+    WorkspaceHomeView,
+    WorkspaceProjectListView,
+    WorkspaceProjectDetailView,
+    WorkspaceProjectCreateView,
+    WorkspaceTaskListView,
+    WorkspaceTaskCreateView,
+    WorkspaceTaskDetailView,
+    WorkspaceTaskUpdateView,
+    WorkspaceTaskStatusView,
+    WorkspaceTaskDeleteView,
+    WorkspaceSettingsView,
 )
 
 urlpatterns = [
     path("", PublicLandingPageView.as_view(), name="public-landing"),
     path("workspace/", ClientLandingPageView.as_view(), name="client-landing"),
     path("workspaces/new/", WorkspaceCreateView.as_view(), name="workspace-create"),
+    path(
+        "workspaces/<int:pk>/",
+        WorkspaceHomeView.as_view(),
+        name="workspace-home",
+    ),
+    path(
+        "workspaces/<int:pk>/projects/",
+        WorkspaceProjectListView.as_view(),
+        name="workspace-projects",
+    ),
+    path(
+        "workspaces/<int:pk>/projects/new/",
+        WorkspaceProjectCreateView.as_view(),
+        name="workspace-project-create",
+    ),
+    path(
+        "workspaces/<int:pk>/projects/<int:project_id>/",
+        WorkspaceProjectDetailView.as_view(),
+        name="workspace-project-detail",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/",
+        WorkspaceTaskListView.as_view(),
+        name="workspace-tasks",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/new/",
+        WorkspaceTaskCreateView.as_view(),
+        name="workspace-task-create",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/<int:task_id>/",
+        WorkspaceTaskDetailView.as_view(),
+        name="workspace-task-detail",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/<int:task_id>/edit/",
+        WorkspaceTaskUpdateView.as_view(),
+        name="workspace-task-update",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/<int:task_id>/status/",
+        WorkspaceTaskStatusView.as_view(),
+        name="workspace-task-status",
+    ),
+    path(
+        "workspaces/<int:pk>/tasks/<int:task_id>/delete/",
+        WorkspaceTaskDeleteView.as_view(),
+        name="workspace-task-delete",
+    ),
+    path(
+        "workspaces/<int:pk>/settings/",
+        WorkspaceSettingsView.as_view(),
+        name="workspace-settings",
+    ),
     path(
         "workspaces/<int:pk>/members/",
         WorkspaceMemberListView.as_view(),

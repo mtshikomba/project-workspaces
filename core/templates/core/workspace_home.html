@@ -1,0 +1,49 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ workspace.name }} | Client tasks</title>
+    <link rel="stylesheet" href="{% static 'core/landing.css' %}">
+</head>
+<body>
+<div class="page-shell workspace-shell">
+    <header class="topbar">
+        <a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a>
+        <nav class="workspace-nav" aria-label="Workspace navigation">
+            <span class="workspace-current">{{ workspace.name }}</span>
+            <a href="{% url 'client-landing' %}">Client overview</a>
+            <a href="{% url 'workspace-projects' workspace.pk %}">Projects</a>
+            <a href="{% url 'workspace-tasks' workspace.pk %}">Tasks</a>
+            <a href="{% url 'workspace-members' workspace.pk %}">Members</a>
+        </nav>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form>
+    </header>
+    <main>
+        <section class="workspace-hero" aria-labelledby="workspace-title">
+            <p class="eyebrow">Company workspace</p>
+            <h1 id="workspace-title">{{ workspace.name }}</h1>
+            <p class="intro-copy">Manage this company's projects, tasks, and people in one focused space.</p>
+        </section>
+        <section class="workspace-switcher" aria-labelledby="switcher-title">
+            <label id="switcher-title" for="workspace-switch">Switch workspace</label>
+            <select id="workspace-switch" onchange="if (this.value) window.location.href = this.value;">
+                <option value="{% url 'client-landing' %}">Client overview</option>
+                {% for item in workspace_memberships %}
+                    <option value="{% url 'workspace-home' item.workspace.pk %}"{% if item.workspace.pk == workspace.pk %} selected{% endif %}>{{ item.workspace.name }}</option>
+                {% endfor %}
+            </select>
+        </section>
+        <section class="task-section" aria-labelledby="project-title">
+            <div class="section-heading"><div><p class="eyebrow">Selected workspace</p><h2 id="project-title">Projects</h2></div><a class="primary-button" href="{% url 'workspace-project-create' workspace.pk %}">New project</a></div>
+            {% if projects %}<div class="project-grid">{% for project in projects %}<a class="project-card" href="{% url 'workspace-project-detail' workspace.pk project.pk %}"><strong>{{ project.name }}</strong><span>{{ project.task_count }} task{{ project.task_count|pluralize }}</span></a>{% endfor %}</div>{% else %}<div class="empty-state"><h3>No projects yet</h3><p>Start the work for {{ workspace.name }} by creating a project.</p><a class="primary-button" href="{% url 'workspace-project-create' workspace.pk %}">Create project</a></div>{% endif %}
+        </section>
+        <section class="task-section" aria-labelledby="task-title">
+            <div class="section-heading"><div><p class="eyebrow">Selected workspace</p><h2 id="task-title">Tasks</h2></div><a class="secondary-button" href="{% url 'workspace-tasks' workspace.pk %}">View tasks</a></div>
+            {% if tasks %}<p class="form-note">{{ tasks|length }} task{{ tasks|length|pluralize }} in {{ workspace.name }}.</p>{% else %}<p class="form-note">No tasks in this workspace yet.</p>{% endif %}
+        </section>
+    </main>
+</div>
+</body>
+</html>

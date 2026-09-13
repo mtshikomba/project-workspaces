@@ -13,13 +13,13 @@
                 <div class="task-lane__dropzone" data-status="{{ lane.value }}" aria-label="{{ lane.label }} tasks">
                     {% for task in lane.tasks %}
                         <article class="task-card" data-task-card data-task-id="{{ task.pk }}" data-status="{{ task.status }}" draggable="true">
-                            <a class="task-link" href="{{ task.get_absolute_url }}"><strong>{{ task.title }}</strong></a>
+                            <a class="task-link" href="{% if workspace %}{% url 'workspace-task-detail' workspace.pk task.pk %}{% else %}{{ task.get_absolute_url }}{% endif %}"><strong>{{ task.title }}</strong></a>
                             <div class="task-card__meta">
                                 <span class="priority priority--{{ task.priority }}">{{ task.get_priority_display }}</span>
                                 <span class="due-date">{% if task.due_date %}{{ task.due_date|date:"M j, Y" }}{% else %}No due date{% endif %}</span>
                             </div>
                             <label class="task-move-label" for="task-move-{{ task.pk }}">Move to</label>
-                            <select class="task-move" id="task-move-{{ task.pk }}" data-task-move data-status-url="{% url 'task-status' task.pk %}" data-current-status="{{ task.status }}">
+                            <select class="task-move" id="task-move-{{ task.pk }}" data-task-move data-status-url="{% if workspace %}{% url 'workspace-task-status' workspace.pk task.pk %}{% else %}{% url 'task-status' task.pk %}{% endif %}" data-current-status="{{ task.status }}">
                                 {% for option in task_statuses %}
                                     <option value="{{ option.0 }}"{% if option.0 == task.status %} selected{% endif %}>{{ option.1 }}</option>
                                 {% endfor %}
@@ -42,7 +42,7 @@
             <article class="task-row" role="listitem">
                 <div class="task-name">
                     <span class="task-dot task-dot--{{ task.status }}"></span>
-                    <div><a class="task-link" href="{{ task.get_absolute_url }}"><strong>{{ task.title }}</strong></a><small>Updated {{ task.updated_at|date:"M j, Y" }}</small></div>
+                    <div><a class="task-link" href="{% if workspace %}{% url 'workspace-task-detail' workspace.pk task.pk %}{% else %}{{ task.get_absolute_url }}{% endif %}"><strong>{{ task.title }}</strong></a><small>Updated {{ task.updated_at|date:"M j, Y" }}</small></div>
                 </div>
                 <span class="status status--{{ task.status }}">{{ task.get_status_display }}</span>
                 <span class="priority priority--{{ task.priority }}">{{ task.get_priority_display }}</span>

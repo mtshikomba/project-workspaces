@@ -55,6 +55,21 @@ class WorkspaceCreateForm(forms.ModelForm):
         return name
 
 
+class WorkspaceSettingsForm(forms.ModelForm):
+    """Validate editable company workspace settings."""
+
+    class Meta:
+        model = Workspace
+        fields = ("name",)
+
+    def clean_name(self) -> str:
+        """Require a non-empty workspace name."""
+        name = self.cleaned_data["name"].strip()
+        if not name:
+            raise forms.ValidationError("Enter a workspace name.")
+        return name
+
+
 class WorkspaceInviteForm(forms.Form):
     """Invite an existing Client user to a company workspace."""
 

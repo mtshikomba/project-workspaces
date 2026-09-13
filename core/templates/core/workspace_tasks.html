@@ -1,0 +1,8 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ workspace.name }} tasks | Client tasks</title><link rel="stylesheet" href="{% static 'core/landing.css' %}"></head>
+<body><div class="page-shell workspace-shell">
+<header class="topbar"><a class="brand" href="{% url 'client-landing' %}"><span class="brand-mark">CT</span><span>Client tasks</span></a><nav class="workspace-nav" aria-label="Workspace navigation"><span class="workspace-current">{{ workspace.name }}</span><a href="{% url 'client-landing' %}">Client overview</a><a href="{% url 'workspace-projects' workspace.pk %}">Projects</a><a href="{% url 'workspace-tasks' workspace.pk %}" aria-current="page">Tasks</a><a href="{% url 'workspace-members' workspace.pk %}">Members</a></nav><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="text-button" type="submit">Sign out</button></form></header>
+<main><section class="workspace-hero"><p class="eyebrow">{{ workspace.name }}</p><h1>{{ workspace.name }} tasks</h1></section><div class="section-heading"><p class="form-note">Tasks linked to projects in this company workspace.</p><a class="primary-button" href="{% url 'workspace-task-create' workspace.pk %}">New task</a></div><section class="task-section">{% include "core/_task_views.html" %}</section></main>
+</div><script src="{% static 'core/task_board.js' %}" defer></script></body></html>

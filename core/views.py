@@ -26,6 +26,7 @@ from core.forms import (
     TaskForm,
     WorkspaceCreateForm,
     WorkspaceInviteForm,
+    WorkspaceSettingsForm,
 )
 from django.contrib.auth.models import User
 
@@ -117,6 +118,290 @@ class WorkspaceAdminMixin(ClientAccessMixin):
 
             raise PermissionDenied
         return membership.workspace
+
+
+class WorkspaceContextMixin(ClientAccessMixin):
+    """Provide a selected company workspace to workspace-scoped views."""
+
+    workspace: Workspace
+    membership: WorkspaceMembership
+
+    def dispatch(self, request: HttpRequest, *args: object, **kwargs: object):
+        """Validate active membership before serving a workspace route."""
+        self.membership = get_object_or_404(
+            WorkspaceMembership.objects.select_related("workspace"),
+            workspace_id=kwargs["pk"],
+            user=request.user,
+            is_active=True,
+            workspace__kind=Workspace.Kind.COMPANY,
+        )
+        self.workspace = self.membership.workspace
+        return super().dispatch(request, *args, **kwargs)
+
+    def workspace_context(self) -> dict[str, object]:
+        """Return shared shell context for the selected workspace."""
+        return {
+            "workspace": self.workspace,
+            "membership": self.membership,
+            "workspace_memberships": WorkspaceMembership.objects.filter(
+                user=self.request.user,
+                is_active=True,
+                workspace__kind=Workspace.Kind.COMPANY,
+            ).select_related("workspace"),
+        }
+
+
+class WorkspaceHomeView(WorkspaceContextMixin, TemplateView):
+    """Display the selected company workspace home."""
+
+    template_name = "core/workspace_home.html"
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace projects and tasks to the workspace shell."""
+        context = super().get_context_data(**kwargs)
+        projects = Project.objects.filter(workspace=self.workspace).annotate(
+            task_count=Count("tasks")
+        )
+        context.update(self.workspace_context())
+        context["projects"] = projects
+        context["tasks"] = Task.objects.filter(project__workspace=self.workspace)
+        return context
+
+
+class WorkspaceProjectListView(WorkspaceContextMixin, TemplateView):
+    """List projects inside the selected company workspace."""
+
+    template_name = "core/workspace_projects.html"
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace projects to the shared shell."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        context["projects"] = Project.objects.filter(workspace=self.workspace).annotate(
+            task_count=Count("tasks")
+        )
+        return context
+
+
+class WorkspaceProjectDetailView(WorkspaceContextMixin, DetailView):
+    """Display a company project and its shared task board."""
+
+    model = Project
+    template_name = "core/workspace_project_detail.html"
+
+    def get_object(self, queryset=None) -> Project:
+        """Return only the project in the selected workspace."""
+        return get_object_or_404(
+            Project, pk=self.kwargs["project_id"], workspace=self.workspace
+        )
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add the selected project's shared task-board context."""
+        context = super().get_context_data(**kwargs)
+        tasks = list(self.object.tasks.select_related("project"))
+        context.update(self.workspace_context())
+        context["tasks"] = tasks
+        context["task_lanes"] = build_task_lanes(tasks)
+        context["task_statuses"] = Task.Status.choices
+        context["task_view_label"] = "Project tasks"
+        return context
+
+
+class WorkspaceProjectCreateView(WorkspaceContextMixin, CreateView):
+    """Create a project directly inside the selected company workspace."""
+
+    model = Project
+    form_class = ProjectForm
+    template_name = "core/workspace_project_form.html"
+
+    def get_form_kwargs(self) -> dict[str, object]:
+        """Limit the form to the selected workspace."""
+        kwargs = super().get_form_kwargs()
+        kwargs["client"] = self.request.user
+        kwargs["workspaces"] = Workspace.objects.filter(pk=self.workspace.pk)
+        return kwargs
+
+    def form_valid(self, form: ProjectForm):
+        """Assign the selected workspace from the route, never form data."""
+        form.instance.client = self.request.user
+        form.instance.workspace = self.workspace
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace navigation context to the form."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        return context
+
+    def get_success_url(self) -> str:
+        """Return to the selected workspace project list."""
+        return reverse_lazy("workspace-projects", kwargs={"pk": self.workspace.pk})
+
+
+class WorkspaceTaskListView(WorkspaceContextMixin, TemplateView):
+    """List tasks inside the selected company workspace."""
+
+    template_name = "core/workspace_tasks.html"
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace tasks to the shared shell."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        tasks = list(
+            Task.objects.filter(project__workspace=self.workspace).select_related(
+                "project"
+            )
+        )
+        context["tasks"] = tasks
+        context["task_lanes"] = build_task_lanes(tasks)
+        context["task_statuses"] = Task.Status.choices
+        context["task_view_label"] = "Workspace tasks"
+        return context
+
+
+class WorkspaceTaskCreateView(WorkspaceContextMixin, CreateView):
+    """Create a task for a project inside the selected company workspace."""
+
+    model = Task
+    form_class = TaskForm
+    template_name = "core/workspace_task_form.html"
+
+    def get_form_kwargs(self) -> dict[str, object]:
+        """Limit project choices to the selected workspace."""
+        kwargs = super().get_form_kwargs()
+        kwargs["client"] = self.request.user
+        kwargs["projects"] = Project.objects.filter(workspace=self.workspace)
+        return kwargs
+
+    def form_valid(self, form: TaskForm):
+        """Assign task ownership from the selected workspace project."""
+        form.instance.client = form.cleaned_data["project"].client
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace navigation context to the form."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        return context
+
+    def get_success_url(self) -> str:
+        """Return to the selected workspace task list."""
+        return reverse_lazy("workspace-tasks", kwargs={"pk": self.workspace.pk})
+
+
+class WorkspaceTaskContextMixin(WorkspaceContextMixin):
+    """Provide a selected workspace and task to task mutation views."""
+
+    task: Task
+
+    def get_task(self, task_id: int) -> Task:
+        """Return a task belonging to the selected workspace."""
+        return get_object_or_404(
+            Task.objects.select_related("project"),
+            pk=task_id,
+            project__workspace=self.workspace,
+        )
+
+
+class WorkspaceTaskDetailView(WorkspaceTaskContextMixin, DetailView):
+    """Display a task inside the selected company workspace."""
+
+    model = Task
+    template_name = "core/workspace_task_detail.html"
+
+    def get_object(self, queryset=None) -> Task:
+        """Return only the selected workspace task."""
+        return self.get_task(self.kwargs["task_id"])
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add shared workspace navigation context."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        return context
+
+
+class WorkspaceTaskUpdateView(WorkspaceTaskContextMixin, UpdateView):
+    """Update a task while preserving the selected workspace context."""
+
+    model = Task
+    form_class = TaskForm
+    template_name = "core/workspace_task_form.html"
+
+    def get_object(self, queryset=None) -> Task:
+        """Return only the selected workspace task."""
+        return self.get_task(self.kwargs["task_id"])
+
+    def get_form_kwargs(self) -> dict[str, object]:
+        """Limit editable project choices to the selected workspace."""
+        kwargs = super().get_form_kwargs()
+        kwargs["client"] = self.request.user
+        kwargs["projects"] = Project.objects.filter(workspace=self.workspace)
+        return kwargs
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add shared workspace navigation context."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        return context
+
+    def get_success_url(self) -> str:
+        """Return to the selected workspace task detail page."""
+        return reverse_lazy(
+            "workspace-task-detail",
+            kwargs={"pk": self.workspace.pk, "task_id": self.object.pk},
+        )
+
+
+class WorkspaceTaskStatusView(WorkspaceTaskContextMixin, View):
+    """Update task status inside the selected workspace."""
+
+    def post(self, request: HttpRequest, pk: int, task_id: int) -> JsonResponse:
+        """Persist a valid status for the selected workspace task."""
+        task = self.get_task(task_id)
+        status = request.POST.get("status")
+        valid_statuses = {choice.value: choice.label for choice in Task.Status}
+        if status not in valid_statuses:
+            return JsonResponse({"error": "Invalid task status."}, status=400)
+        task.status = status
+        task.save(update_fields=["status", "updated_at"])
+        return JsonResponse({"status": status, "label": valid_statuses[status]})
+
+
+class WorkspaceTaskDeleteView(WorkspaceTaskContextMixin, DeleteView):
+    """Delete a task while preserving selected workspace context."""
+
+    model = Task
+    template_name = "core/workspace_task_confirm_delete.html"
+
+    def get_object(self, queryset=None) -> Task:
+        """Return only the selected workspace task."""
+        return self.get_task(self.kwargs["task_id"])
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add shared workspace navigation context."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        return context
+
+    def get_success_url(self) -> str:
+        """Return to the selected workspace task list."""
+        return reverse_lazy("workspace-tasks", kwargs={"pk": self.workspace.pk})
+
+
+class WorkspaceSettingsView(WorkspaceAdminMixin, UpdateView):
+    """Allow company administrators to update selected workspace settings."""
+
+    model = Workspace
+    form_class = WorkspaceSettingsForm
+    template_name = "core/workspace_settings.html"
+
+    def get_object(self, queryset=None) -> Workspace:
+        """Return the administered workspace from the route."""
+        return self.get_workspace(self.kwargs["pk"])
+
+    def get_success_url(self) -> str:
+        """Return to the selected workspace after saving settings."""
+        return reverse_lazy("workspace-home", kwargs={"pk": self.object.pk})
 
 
 class WorkspaceMemberListView(WorkspaceAdminMixin, View):
@@ -319,13 +604,20 @@ class ClientLandingPageView(ClientAccessMixin, TemplateView):
 
     def get_projects(self) -> QuerySet[Project]:
         """Return projects owned by or shared with the authenticated client."""
-        return accessible_projects(self.request.user).annotate(
-            task_count=Count("tasks")
+        return (
+            accessible_projects(self.request.user)
+            .filter(
+                Q(workspace__isnull=True) | Q(workspace__kind=Workspace.Kind.PERSONAL)
+            )
+            .annotate(task_count=Count("tasks"))
         )
 
     def get_tasks(self) -> QuerySet[Task]:
         """Return only tasks owned by the authenticated client."""
-        return Task.objects.filter(client=self.request.user)
+        return Task.objects.filter(client=self.request.user).filter(
+            Q(project__workspace__isnull=True)
+            | Q(project__workspace__kind=Workspace.Kind.PERSONAL)
+        )
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         """Build task summary and task list data for the landing page."""
