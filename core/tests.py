@@ -43,6 +43,18 @@ class PublicLandingPageTests(TestCase):
         self.assertContains(response, "Create an account")
         self.assertContains(response, "Project-based task management")
         self.assertContains(response, "Ready to work together?")
+        for feature in (
+            "Personal client workspace",
+            "Status lanes and list view",
+            "Project invitations",
+            "Company workspaces",
+            "Workspace invitations",
+            "role-aware access",
+        ):
+            with self.subTest(feature=feature):
+                self.assertContains(response, feature)
+        self.assertNotContains(response, "AI agents")
+        self.assertNotContains(response, "file uploads")
         self.assertContains(response, "Client tasks")
 
     def test_authenticated_users_can_continue_to_workspace(self) -> None:
@@ -56,6 +68,7 @@ class PublicLandingPageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Open workspace")
+        self.assertContains(response, "personal client overview")
         self.assertContains(response, "/workspace/")
 
     def test_workspace_requires_client_access(self) -> None:
@@ -834,6 +847,11 @@ class ClientProjectManagementTests(TestCase):
             ).count(),
             1,
         )
+        self.assertContains(response, 'name="name"')
+        self.assertContains(response, 'aria-invalid="true"')
+        self.assertContains(response, 'aria-describedby="id_name-error"')
+        self.assertContains(response, 'id="id_name-error"')
+        self.assertContains(response, "form_validation.js")
 
     def test_client_cannot_access_other_clients_project(self) -> None:
         """Project detail, edit, and delete are owner-scoped."""
@@ -932,6 +950,15 @@ class ProjectCollaborationTests(TestCase):
             self.client.get(self.project.get_absolute_url()).status_code, 200
         )
         self.assertEqual(self.client.get(self.task.get_absolute_url()).status_code, 200)
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, ProjectInvitation.Status.ACCEPTED)
+        self.assertIsNotNone(invitation.accepted_at)
+        self.assertEqual(
+            ProjectMembership.objects.filter(
+                project=self.project, user=self.invitee, is_active=True
+            ).count(),
+            1,
+        )
 
     def test_collaborator_cannot_manage_project_or_invite_users(self) -> None:
         """Collaborators can work in a project but cannot manage ownership controls."""
@@ -1609,6 +1636,18 @@ class WorkspaceManagementContextTests(TestCase):
         self.assertRedirects(response, f"/workspaces/{self.workspace.pk}/projects/")
         self.assertEqual(project.workspace, self.workspace)
 
+    def test_company_member_cannot_create_project_in_workspace_context(self) -> None:
+        """Workspace clients cannot create projects through admin routes."""
+        self.client.force_login(self.member)
+
+        response = self.client.post(
+            f"/workspaces/{self.workspace.pk}/projects/new/",
+            {"name": "Unauthorized project", "description": "No access"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Project.objects.filter(name="Unauthorized project").exists())
+
     def test_workspace_project_form_locks_selected_workspace(self) -> None:
         """Workspace project creation displays its route workspace as fixed."""
         self.client.force_login(self.admin)
@@ -1642,6 +1681,9 @@ class WorkspaceManagementContextTests(TestCase):
         self.assertEqual(
             response.context["form"]["workspace"].value(), self.workspace.pk
         )
+        self.assertContains(response, 'aria-invalid="true"')
+        self.assertContains(response, 'aria-describedby="id_name-error"')
+        self.assertContains(response, 'id="id_name-error"')
 
     def test_workspace_project_list_links_to_project_detail(self) -> None:
         """Workspace project cards open the selected project context."""
@@ -1657,6 +1699,8 @@ class WorkspaceManagementContextTests(TestCase):
     def test_admin_can_edit_project_in_workspace_context(self) -> None:
         """Workspace administrators can edit projects without losing context."""
         self.client.force_login(self.admin)
+        self.project.client = self.member
+        self.project.save(update_fields=["client"])
 
         response = self.client.get(
             f"/workspaces/{self.workspace.pk}/projects/{self.project.pk}/edit/"
@@ -1682,6 +1726,7 @@ class WorkspaceManagementContextTests(TestCase):
         )
         self.project.refresh_from_db()
         self.assertEqual(self.project.workspace, self.workspace)
+        self.assertEqual(self.project.client, self.member)
         self.assertEqual(self.project.name, "Updated company project")
 
     def test_company_member_cannot_edit_project_in_workspace_context(self) -> None:

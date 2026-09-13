@@ -152,6 +152,24 @@ class WorkspaceContextMixin(ClientAccessMixin):
         }
 
 
+class WorkspaceAdminContextMixin(WorkspaceContextMixin):
+    """Restrict selected workspace management to active administrators."""
+
+    def dispatch(self, request: HttpRequest, *args: object, **kwargs: object):
+        """Reject workspace management requests from regular members."""
+        self.membership = get_object_or_404(
+            WorkspaceMembership.objects.select_related("workspace"),
+            workspace_id=kwargs["pk"],
+            user=request.user,
+            is_active=True,
+            workspace__kind=Workspace.Kind.COMPANY,
+        )
+        self.workspace = self.membership.workspace
+        if self.membership.role != WorkspaceMembership.Role.ADMIN:
+            raise PermissionDenied
+        return ClientAccessMixin.dispatch(self, request, *args, **kwargs)
+
+
 class WorkspaceHomeView(WorkspaceContextMixin, TemplateView):
     """Display the selected company workspace home."""
 
@@ -208,7 +226,7 @@ class WorkspaceProjectDetailView(WorkspaceContextMixin, DetailView):
         return context
 
 
-class WorkspaceProjectCreateView(WorkspaceContextMixin, CreateView):
+class WorkspaceProjectCreateView(WorkspaceAdminContextMixin, CreateView):
     """Create a project directly inside the selected company workspace."""
 
     model = Project
@@ -241,7 +259,7 @@ class WorkspaceProjectCreateView(WorkspaceContextMixin, CreateView):
         return reverse_lazy("workspace-projects", kwargs={"pk": self.workspace.pk})
 
 
-class WorkspaceProjectUpdateView(WorkspaceContextMixin, UpdateView):
+class WorkspaceProjectUpdateView(WorkspaceAdminContextMixin, UpdateView):
     """Allow workspace administrators to edit projects in context."""
 
     model = Project
@@ -250,8 +268,6 @@ class WorkspaceProjectUpdateView(WorkspaceContextMixin, UpdateView):
 
     def get_object(self, queryset=None) -> Project:
         """Return an editable project from the selected workspace."""
-        if self.membership.role != WorkspaceMembership.Role.ADMIN:
-            raise PermissionDenied
         return get_object_or_404(
             Project,
             pk=self.kwargs["project_id"],
@@ -268,7 +284,6 @@ class WorkspaceProjectUpdateView(WorkspaceContextMixin, UpdateView):
 
     def form_valid(self, form: ProjectForm):
         """Keep edited projects assigned to the selected workspace."""
-        form.instance.client = self.request.user
         form.instance.workspace = self.workspace
         return super().form_valid(form)
 
@@ -1080,28 +1095,30 @@ class ClientProjectInvitationAcceptView(ClientAccessMixin, View):
 
     def post(self, request: HttpRequest, token):
         """Activate membership and consume the invitation token."""
-        invitation = self._get_invitation(request, token)
-        ProjectMembership.objects.update_or_create(
-            project=invitation.project,
-            user=request.user,
-            defaults={"is_active": True},
-        )
-        invitation.status = ProjectInvitation.Status.ACCEPTED
-        invitation.accepted_at = timezone.now()
-        invitation.save(update_fields=["status", "accepted_at"])
+        with transaction.atomic():
+            invitation = self._get_invitation(request, token, lock=True)
+            ProjectMembership.objects.update_or_create(
+                project=invitation.project,
+                user=request.user,
+                defaults={"is_active": True},
+            )
+            invitation.status = ProjectInvitation.Status.ACCEPTED
+            invitation.accepted_at = timezone.now()
+            invitation.save(update_fields=["status", "accepted_at"])
         return redirect(invitation.project.get_absolute_url())
 
-    def _get_invitation(self, request: HttpRequest, token) -> ProjectInvitation:
+    def _get_invitation(
+        self, request: HttpRequest, token, lock: bool = False
+    ) -> ProjectInvitation:
         """Return a pending invitation only to its intended recipient."""
-        invitation = (
-            ProjectInvitation.objects.filter(
-                token=token,
-                invitee=request.user,
-                status=ProjectInvitation.Status.PENDING,
-            )
-            .select_related("project", "inviter")
-            .first()
-        )
+        queryset = ProjectInvitation.objects.filter(
+            token=token,
+            invitee=request.user,
+            status=ProjectInvitation.Status.PENDING,
+        ).select_related("project", "inviter")
+        if lock:
+            queryset = queryset.select_for_update()
+        invitation = queryset.first()
         if invitation is None:
             raise Http404
         return invitation
@@ -1128,20 +1145,21 @@ class ClientProjectInvitationAcceptByIdView(ClientAccessMixin, View):
 
     def post(self, request: HttpRequest, pk: int):
         """Activate membership for the intended recipient."""
-        invitation = get_object_or_404(
-            ProjectInvitation,
-            pk=pk,
-            invitee=request.user,
-            status=ProjectInvitation.Status.PENDING,
-        )
-        ProjectMembership.objects.update_or_create(
-            project=invitation.project,
-            user=request.user,
-            defaults={"is_active": True},
-        )
-        invitation.status = ProjectInvitation.Status.ACCEPTED
-        invitation.accepted_at = timezone.now()
-        invitation.save(update_fields=["status", "accepted_at"])
+        with transaction.atomic():
+            invitation = get_object_or_404(
+                ProjectInvitation.objects.select_for_update(),
+                pk=pk,
+                invitee=request.user,
+                status=ProjectInvitation.Status.PENDING,
+            )
+            ProjectMembership.objects.update_or_create(
+                project=invitation.project,
+                user=request.user,
+                defaults={"is_active": True},
+            )
+            invitation.status = ProjectInvitation.Status.ACCEPTED
+            invitation.accepted_at = timezone.now()
+            invitation.save(update_fields=["status", "accepted_at"])
         return redirect(invitation.project.get_absolute_url())
 
 
