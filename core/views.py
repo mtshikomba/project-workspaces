@@ -2,6 +2,7 @@ from django.http import Http404, HttpRequest, JsonResponse
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.mixins import UserPassesTestMixin
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, F, Q, QuerySet
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
@@ -219,6 +220,7 @@ class WorkspaceProjectCreateView(WorkspaceContextMixin, CreateView):
         kwargs = super().get_form_kwargs()
         kwargs["client"] = self.request.user
         kwargs["workspaces"] = Workspace.objects.filter(pk=self.workspace.pk)
+        kwargs["workspace_context"] = self.workspace
         return kwargs
 
     def form_valid(self, form: ProjectForm):
@@ -231,11 +233,58 @@ class WorkspaceProjectCreateView(WorkspaceContextMixin, CreateView):
         """Add selected workspace navigation context to the form."""
         context = super().get_context_data(**kwargs)
         context.update(self.workspace_context())
+        context["workspace_context"] = self.workspace
         return context
 
     def get_success_url(self) -> str:
         """Return to the selected workspace project list."""
         return reverse_lazy("workspace-projects", kwargs={"pk": self.workspace.pk})
+
+
+class WorkspaceProjectUpdateView(WorkspaceContextMixin, UpdateView):
+    """Allow workspace administrators to edit projects in context."""
+
+    model = Project
+    form_class = ProjectForm
+    template_name = "core/workspace_project_form.html"
+
+    def get_object(self, queryset=None) -> Project:
+        """Return an editable project from the selected workspace."""
+        if self.membership.role != WorkspaceMembership.Role.ADMIN:
+            raise PermissionDenied
+        return get_object_or_404(
+            Project,
+            pk=self.kwargs["project_id"],
+            workspace=self.workspace,
+        )
+
+    def get_form_kwargs(self) -> dict[str, object]:
+        """Pass the selected workspace as the authoritative form context."""
+        kwargs = super().get_form_kwargs()
+        kwargs["client"] = self.request.user
+        kwargs["workspaces"] = Workspace.objects.filter(pk=self.workspace.pk)
+        kwargs["workspace_context"] = self.workspace
+        return kwargs
+
+    def form_valid(self, form: ProjectForm):
+        """Keep edited projects assigned to the selected workspace."""
+        form.instance.client = self.request.user
+        form.instance.workspace = self.workspace
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs: object) -> dict[str, object]:
+        """Add selected workspace navigation and form context."""
+        context = super().get_context_data(**kwargs)
+        context.update(self.workspace_context())
+        context["workspace_context"] = self.workspace
+        return context
+
+    def get_success_url(self) -> str:
+        """Return to the edited project inside the selected workspace."""
+        return reverse_lazy(
+            "workspace-project-detail",
+            kwargs={"pk": self.workspace.pk, "project_id": self.object.pk},
+        )
 
 
 class WorkspaceTaskListView(WorkspaceContextMixin, TemplateView):
