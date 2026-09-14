@@ -1,6 +1,26 @@
+from django.contrib.auth.models import User
+from django.db import models
 from django.db import transaction
 
-from core.models import WorkspaceMembership
+from core.models import Project, WorkspaceMembership
+
+
+def get_eligible_task_assignees(project: Project) -> models.QuerySet[User]:
+    """Return a queryset of users eligible to be assigned to tasks in the project."""
+    user_ids = {project.client_id}
+
+    project_member_ids = project.memberships.filter(is_active=True).values_list(
+        "user_id", flat=True
+    )
+    user_ids.update(project_member_ids)
+
+    if project.workspace_id:
+        workspace_member_ids = project.workspace.memberships.filter(
+            is_active=True
+        ).values_list("user_id", flat=True)
+        user_ids.update(workspace_member_ids)
+
+    return User.objects.filter(id__in=user_ids).order_by("username")
 
 
 class LastAdministratorError(Exception):

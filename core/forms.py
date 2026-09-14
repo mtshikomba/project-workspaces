@@ -14,6 +14,7 @@ from core.models import (
     WorkspaceMembership,
 )
 from core.sanitization import clean_rich_text
+from core.services import get_eligible_task_assignees
 
 
 class ClientRegistrationForm(UserCreationForm):
@@ -120,7 +121,15 @@ class TaskForm(forms.ModelForm):
 
     class Meta:
         model = Task
-        fields = ("project", "title", "description", "status", "priority", "due_date")
+        fields = (
+            "project",
+            "title",
+            "description",
+            "status",
+            "priority",
+            "due_date",
+            "assigned_to",
+        )
         widgets = {
             "due_date": forms.DateInput(attrs={"type": "date"}),
         }
@@ -143,6 +152,52 @@ class TaskForm(forms.ModelForm):
             )
             self.fields["project"].initial = project_context.pk
             self.fields["project"].disabled = True
+
+        self.fields["assigned_to"].required = False
+        self.fields["assigned_to"].label = "Assigned client"
+        self.fields["assigned_to"].help_text = (
+            "Select a client who belongs to this project or workspace."
+        )
+        self.fields["assigned_to"].empty_label = "Unassigned"
+
+        target_project = project_context
+        if (
+            target_project is None
+            and self.instance
+            and getattr(self.instance, "project_id", None)
+        ):
+            target_project = self.instance.project
+        if target_project is None and self.is_bound:
+            p_id = self.data.get("project")
+            if p_id:
+                try:
+                    target_project = self.fields["project"].queryset.get(pk=p_id)
+                except (Project.DoesNotExist, ValueError, TypeError):
+                    target_project = None
+
+        if target_project is not None:
+            self.fields["assigned_to"].queryset = get_eligible_task_assignees(
+                target_project
+            )
+        else:
+            allowed_projects = self.fields["project"].queryset
+            user_ids = set()
+            for p in allowed_projects.select_related("workspace"):
+                user_ids.add(p.client_id)
+                user_ids.update(
+                    p.memberships.filter(is_active=True).values_list(
+                        "user_id", flat=True
+                    )
+                )
+                if p.workspace_id:
+                    user_ids.update(
+                        p.workspace.memberships.filter(is_active=True).values_list(
+                            "user_id", flat=True
+                        )
+                    )
+            self.fields["assigned_to"].queryset = User.objects.filter(
+                id__in=user_ids
+            ).order_by("username")
 
     def clean_description(self) -> str:
         """Sanitize rich-text content before saving it."""

@@ -1934,3 +1934,151 @@ class WorkspaceManagementContextTests(TestCase):
         response = self.client.get(f"/workspaces/{self.workspace.pk}/settings/")
 
         self.assertEqual(response.status_code, 403)
+
+
+class TaskAssignmentTests(TestCase):
+    """Verify task assignment eligibility, validation, persistence, and UI rendering."""
+
+    def setUp(self) -> None:
+        self.client_group = Group.objects.create(name="Client")
+        self.owner = User.objects.create_user(
+            username="project-owner", password="test-password"
+        )
+        self.owner.groups.add(self.client_group)
+        self.project_member = User.objects.create_user(
+            username="project-member", password="test-password"
+        )
+        self.project_member.groups.add(self.client_group)
+        self.workspace_member = User.objects.create_user(
+            username="workspace-member", password="test-password"
+        )
+        self.workspace_member.groups.add(self.client_group)
+        self.pending_invitee = User.objects.create_user(
+            username="pending-invitee", password="test-password"
+        )
+        self.pending_invitee.groups.add(self.client_group)
+        self.outsider = User.objects.create_user(
+            username="outsider-user", password="test-password"
+        )
+        self.outsider.groups.add(self.client_group)
+
+        self.workspace = Workspace.objects.create(
+            name="Collaborative Workspace", kind=Workspace.Kind.COMPANY
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.owner,
+            role=WorkspaceMembership.Role.ADMIN,
+        )
+        WorkspaceMembership.objects.create(
+            workspace=self.workspace,
+            user=self.workspace_member,
+            role=WorkspaceMembership.Role.CLIENT,
+        )
+        WorkspaceInvitation.objects.create(
+            workspace=self.workspace,
+            inviter=self.owner,
+            invitee=self.pending_invitee,
+            status=WorkspaceInvitation.Status.PENDING,
+        )
+
+        self.project = Project.objects.create(
+            client=self.owner,
+            workspace=self.workspace,
+            name="Assignment Project",
+        )
+        ProjectMembership.objects.create(
+            project=self.project,
+            user=self.project_member,
+            is_active=True,
+        )
+        ProjectInvitation.objects.create(
+            project=self.project,
+            inviter=self.owner,
+            invitee=self.pending_invitee,
+            status=ProjectInvitation.Status.PENDING,
+        )
+
+    def test_eligible_task_assignees_includes_members(self) -> None:
+        """Eligible assignees include project owner and active members."""
+        from core.services import get_eligible_task_assignees
+
+        eligible_assignees = get_eligible_task_assignees(self.project)
+
+        self.assertIn(self.owner, eligible_assignees)
+        self.assertIn(self.project_member, eligible_assignees)
+        self.assertIn(self.workspace_member, eligible_assignees)
+        self.assertNotIn(self.pending_invitee, eligible_assignees)
+        self.assertNotIn(self.outsider, eligible_assignees)
+
+    def test_create_task_with_valid_assignment(self) -> None:
+        """A task can be assigned to an eligible member upon creation."""
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            "/tasks/new/",
+            {
+                "project": self.project.pk,
+                "title": "Assigned Task",
+                "status": Task.Status.OUTSTANDING,
+                "priority": Task.Priority.MEDIUM,
+                "assigned_to": self.project_member.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        task = Task.objects.get(title="Assigned Task")
+        self.assertEqual(task.assigned_to, self.project_member)
+
+    def test_create_task_rejects_ineligible_assignment(self) -> None:
+        """Assigning a task to a non-member raises a form validation error."""
+        self.client.force_login(self.owner)
+
+        response = self.client.post(
+            "/tasks/new/",
+            {
+                "project": self.project.pk,
+                "title": "Invalid Assigned Task",
+                "status": Task.Status.OUTSTANDING,
+                "priority": Task.Priority.MEDIUM,
+                "assigned_to": self.outsider.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormError(
+            response,
+            "form",
+            "assigned_to",
+            "Select a valid choice. That choice is not one of the available choices.",
+        )
+        self.assertFalse(Task.objects.filter(title="Invalid Assigned Task").exists())
+
+    def test_task_detail_and_list_views_render_assignee_badge(self) -> None:
+        """Task detail, list, and board views display assigned username badge."""
+        task = Task.objects.create(
+            client=self.owner,
+            project=self.project,
+            title="Detailed Task",
+            assigned_to=self.project_member,
+        )
+        unassigned_task = Task.objects.create(
+            client=self.owner,
+            project=self.project,
+            title="Unassigned Task",
+            assigned_to=None,
+        )
+
+        self.client.force_login(self.owner)
+
+        detail_response = self.client.get(f"/tasks/{task.pk}/")
+        self.assertContains(detail_response, "Assigned client")
+        self.assertContains(detail_response, self.project_member.username)
+
+        unassigned_detail_response = self.client.get(f"/tasks/{unassigned_task.pk}/")
+        self.assertContains(unassigned_detail_response, "Assigned client")
+        self.assertContains(unassigned_detail_response, "Unassigned")
+
+        list_response = self.client.get(f"/projects/{self.project.pk}/")
+        self.assertContains(list_response, self.project_member.username)
+        self.assertContains(list_response, "Unassigned")

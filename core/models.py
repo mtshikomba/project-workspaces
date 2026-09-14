@@ -369,6 +369,16 @@ class Task(models.Model):
         help_text="The client user who owns this task.",
         db_index=True,
     )
+    assigned_to = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="assigned_tasks",
+        verbose_name="assigned client",
+        help_text="The client user assigned to perform this task.",
+        db_index=True,
+    )
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
