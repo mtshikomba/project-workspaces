@@ -2082,3 +2082,20 @@ class TaskAssignmentTests(TestCase):
         list_response = self.client.get(f"/projects/{self.project.pk}/")
         self.assertContains(list_response, self.project_member.username)
         self.assertContains(list_response, "Unassigned")
+
+    def test_task_detail_pages_use_full_width_layout(self) -> None:
+        """Personal and workspace detail pages use full-width task-page class."""
+        task = Task.objects.create(
+            client=self.owner,
+            project=self.project,
+            title="Layout Test Task",
+        )
+        self.client.force_login(self.owner)
+
+        personal_response = self.client.get(f"/tasks/{task.pk}/")
+        workspace_response = self.client.get(
+            f"/workspaces/{self.workspace.pk}/tasks/{task.pk}/"
+        )
+
+        self.assertContains(personal_response, 'class="detail-panel task-page"')
+        self.assertContains(workspace_response, 'class="detail-panel task-page"')

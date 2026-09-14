@@ -164,7 +164,7 @@ h2 { margin-bottom: 0; font-size: 2.5rem; font-weight: 400; letter-spacing: -0.0
 .task-form-panel form .errorlist { margin: 0; }
 .form-note { color: var(--muted); line-height: 1.5; }
 .detail-panel { max-width: 760px; padding: 72px 0; }
-.detail-panel.project-page { max-width: none; }
+.detail-panel.project-page, .detail-panel.task-page { max-width: none; }
 .detail-panel h1 { max-width: none; font-size: clamp(2.8rem, 6vw, 4.8rem); }
 .task-description { margin: 28px 0; padding: 24px; background: var(--white); border: 1px solid var(--line); line-height: 1.65; }
 .task-description a { color: var(--teal-dark); }
