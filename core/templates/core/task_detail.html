@@ -10,12 +10,13 @@
 <body>
     <div class="page-shell">
         {% include "core/_authenticated_header.html" %}
-        <main class="detail-panel">
+        <main class="detail-panel task-page">
             <a class="back-link" href="{% url 'client-landing' %}">← Back to workspace</a>
             <p class="eyebrow">Task detail</p>
             <h1>{{ task.title }}</h1>
             {% if task.description %}<section class="task-description" aria-label="Task description">{{ task.get_safe_description|safe }}</section>{% else %}<p class="form-note">No description added yet.</p>{% endif %}
             <div class="detail-grid">
+                <div><span class="detail-label">Assigned client</span><span>{% if task.assigned_to %}{{ task.assigned_to.username }}{% else %}Unassigned{% endif %}</span></div>
                 <div><span class="detail-label">Status</span><span class="status status--{{ task.status }}">{{ task.get_status_display }}</span></div>
                 <div><span class="detail-label">Priority</span><span class="priority priority--{{ task.priority }}">{{ task.get_priority_display }}</span></div>
                 <div><span class="detail-label">Due date</span><span>{% if task.due_date %}{{ task.due_date|date:"M j, Y" }}{% else %}No due date{% endif %}</span></div>

@@ -17,6 +17,7 @@
                             <div class="task-card__meta">
                                 <span class="priority priority--{{ task.priority }}">{{ task.get_priority_display }}</span>
                                 <span class="due-date">{% if task.due_date %}{{ task.due_date|date:"M j, Y" }}{% else %}No due date{% endif %}</span>
+                                <span class="assignee-badge{% if not task.assigned_to %} assignee-badge--unassigned{% endif %}">{% if task.assigned_to %}@{{ task.assigned_to.username }}{% else %}Unassigned{% endif %}</span>
                             </div>
                             <label class="task-move-label" for="task-move-{{ task.pk }}">Move to</label>
                             <select class="task-move" id="task-move-{{ task.pk }}" data-task-move data-status-url="{% if workspace %}{% url 'workspace-task-status' workspace.pk task.pk %}{% else %}{% url 'task-status' task.pk %}{% endif %}" data-current-status="{{ task.status }}">
@@ -36,7 +37,7 @@
 <div class="task-view task-view--list" data-task-view-panel="list" hidden>
     <div class="task-table" role="list">
         <div class="task-row task-row--header" aria-hidden="true">
-            <span>Task</span><span>Status</span><span>Priority</span><span>Due</span>
+            <span>Task</span><span>Assignee</span><span>Status</span><span>Priority</span><span>Due</span>
         </div>
         {% for task in tasks %}
             <article class="task-row" role="listitem">
@@ -44,6 +45,7 @@
                     <span class="task-dot task-dot--{{ task.status }}"></span>
                     <div><a class="task-link" href="{% if workspace %}{% url 'workspace-task-detail' workspace.pk task.pk %}{% else %}{{ task.get_absolute_url }}{% endif %}"><strong>{{ task.title }}</strong></a><small>Updated {{ task.updated_at|date:"M j, Y" }}</small></div>
                 </div>
+                <span class="assignee-badge{% if not task.assigned_to %} assignee-badge--unassigned{% endif %}">{% if task.assigned_to %}{{ task.assigned_to.username }}{% else %}Unassigned{% endif %}</span>
                 <span class="status status--{{ task.status }}">{{ task.get_status_display }}</span>
                 <span class="priority priority--{{ task.priority }}">{{ task.get_priority_display }}</span>
                 <span class="due-date">{% if task.due_date %}{{ task.due_date|date:"M j, Y" }}{% else %}No due date{% endif %}</span>

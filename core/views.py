@@ -217,7 +217,7 @@ class WorkspaceProjectDetailView(WorkspaceContextMixin, DetailView):
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
         """Add the selected project's shared task-board context."""
         context = super().get_context_data(**kwargs)
-        tasks = list(self.object.tasks.select_related("project"))
+        tasks = list(self.object.tasks.select_related("project", "assigned_to"))
         context.update(self.workspace_context())
         context["tasks"] = tasks
         context["task_lanes"] = build_task_lanes(tasks)
@@ -313,7 +313,7 @@ class WorkspaceTaskListView(WorkspaceContextMixin, TemplateView):
         context.update(self.workspace_context())
         tasks = list(
             Task.objects.filter(project__workspace=self.workspace).select_related(
-                "project"
+                "project", "assigned_to"
             )
         )
         context["tasks"] = tasks
@@ -375,7 +375,7 @@ class WorkspaceTaskContextMixin(WorkspaceContextMixin):
     def get_task(self, task_id: int) -> Task:
         """Return a task belonging to the selected workspace."""
         return get_object_or_404(
-            Task.objects.select_related("project"),
+            Task.objects.select_related("project", "assigned_to"),
             pk=task_id,
             project__workspace=self.workspace,
         )
@@ -692,9 +692,13 @@ class ClientLandingPageView(ClientAccessMixin, TemplateView):
 
     def get_tasks(self) -> QuerySet[Task]:
         """Return only tasks owned by the authenticated client."""
-        return Task.objects.filter(client=self.request.user).filter(
-            Q(project__workspace__isnull=True)
-            | Q(project__workspace__kind=Workspace.Kind.PERSONAL)
+        return (
+            Task.objects.filter(client=self.request.user)
+            .filter(
+                Q(project__workspace__isnull=True)
+                | Q(project__workspace__kind=Workspace.Kind.PERSONAL)
+            )
+            .select_related("project", "assigned_to")
         )
 
     def get_context_data(self, **kwargs: object) -> dict[str, object]:
@@ -782,18 +786,22 @@ class ClientTaskQuerysetMixin(ClientAccessMixin):
 
     def get_queryset(self) -> QuerySet[Task]:
         """Return tasks owned by or shared with the authenticated client."""
-        return Task.objects.filter(
-            Q(client=self.request.user)
-            | Q(
-                project__memberships__user=self.request.user,
-                project__memberships__is_active=True,
+        return (
+            Task.objects.filter(
+                Q(client=self.request.user)
+                | Q(
+                    project__memberships__user=self.request.user,
+                    project__memberships__is_active=True,
+                )
+                | Q(
+                    project__workspace__memberships__user=self.request.user,
+                    project__workspace__memberships__is_active=True,
+                )
+                | Q(project__client=self.request.user, client=F("project__client"))
             )
-            | Q(
-                project__workspace__memberships__user=self.request.user,
-                project__workspace__memberships__is_active=True,
-            )
-            | Q(project__client=self.request.user, client=F("project__client"))
-        ).distinct()
+            .select_related("project", "assigned_to")
+            .distinct()
+        )
 
 
 class ClientTaskDetailView(ClientTaskQuerysetMixin, DetailView):
