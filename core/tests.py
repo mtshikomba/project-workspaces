@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.models import Group
 from django.test import Client as TestClient
@@ -28,6 +29,10 @@ class HealthCheckViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertJSONEqual(response.content, {"status": "ok"})
+
+    def test_static_files_have_a_collectstatic_destination(self) -> None:
+        """The production image has a dedicated static-file output directory."""
+        self.assertEqual(settings.STATIC_ROOT, settings.BASE_DIR / "staticfiles")
 
 
 class PublicLandingPageTests(TestCase):
