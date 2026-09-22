@@ -14,6 +14,8 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -31,10 +33,20 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
+if not DEBUG and SECRET_KEY == "django-insecure-local-development-key":
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false."
+    )
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
     if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
 ]
 
 
@@ -106,15 +118,54 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "TEST": {
-            "NAME": ":memory:",
-        },
+DB_ENGINE = os.environ.get("DB_ENGINE", "sqlite").lower()
+DB_HOST = os.environ.get("DB_HOST", "")
+
+if not IS_TESTING and (DB_ENGINE == "mysql" or DB_HOST):
+    required_database_settings = {
+        "DB_HOST": DB_HOST,
+        "DB_PORT": os.environ.get("DB_PORT", ""),
+        "DB_NAME": os.environ.get("DB_NAME", ""),
+        "DB_USER": os.environ.get("DB_USER", ""),
+        "DB_PASSWORD": os.environ.get("DB_PASSWORD", ""),
     }
-}
+    missing_database_settings = [
+        name for name, value in required_database_settings.items() if not value
+    ]
+    if missing_database_settings:
+        raise ImproperlyConfigured(
+            "Missing shared MySQL settings: " + ", ".join(missing_database_settings)
+        )
+    if DB_ENGINE != "mysql":
+        raise ImproperlyConfigured(
+            "DB_ENGINE must be mysql when DB_HOST is configured."
+        )
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": required_database_settings["DB_NAME"],
+            "USER": required_database_settings["DB_USER"],
+            "PASSWORD": required_database_settings["DB_PASSWORD"],
+            "HOST": required_database_settings["DB_HOST"],
+            "PORT": required_database_settings["DB_PORT"],
+            "OPTIONS": {"charset": "utf8mb4"},
+        }
+    }
+elif DB_ENGINE != "sqlite":
+    raise ImproperlyConfigured(
+        "DB_ENGINE must be sqlite or mysql. Configure all MySQL settings before "
+        "starting the production application."
+    )
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+            "TEST": {
+                "NAME": ":memory:",
+            },
+        }
+    }
 
 if IS_TESTING:
     PASSWORD_HASHERS = [
@@ -161,6 +212,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

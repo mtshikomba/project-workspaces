@@ -197,6 +197,58 @@ virtual environment, SQLite data, Git metadata, test artifacts, and editor files
 Never pass `DJANGO_SECRET_KEY`, database credentials, or other secrets through
 Docker build arguments; provide runtime secrets through the deployment platform.
 
+## Docker Compose with shared MySQL
+
+The production Compose file runs only the Django `web` service. It connects to
+the existing shared MySQL instance supplied through `.env.production`; it does
+not create a `db` service or a local database volume. Copy
+`.env.production.example` to `.env.production` on the deployment host and fill
+in real values there. Never commit that file.
+
+The container expects `DB_ENGINE=mysql`, `DB_HOST`, `DB_PORT`, `DB_NAME`,
+`DB_USER`, and `DB_PASSWORD`. Missing or incomplete MySQL settings fail startup;
+the production container never silently falls back to its ephemeral SQLite
+database. Use a least-privilege application account, not MySQL root. The host
+must be reachable from the Docker network and allowlisted by the database
+firewall; TLS requirements must follow the shared database policy. Linux Docker
+does not assume that `host.docker.internal` resolves, so use the approved
+private hostname or IP for `DB_HOST`.
+
+The shared reverse-proxy network is declared as an external `proxy-tier` network
+and must already exist on the host:
+
+```bash
+docker network create proxy-tier
+```
+
+Proxy routing, TLS, and labels are intentionally deferred to the reverse-proxy
+deployment. The Compose file also creates an internal `app-network` for future
+service connectivity. The fixed web container name is `client-tasks-web`.
+
+Validate and start the stack after creating `.env.production`:
+
+```bash
+docker compose config
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:8000/health/
+```
+
+The Compose service leaves automatic migrations disabled. Run the migration as
+an explicit release step with the shared database credentials before serving a
+new schema:
+
+```bash
+docker compose run --rm --no-deps -e RUN_MIGRATIONS=1 web true
+```
+
+The command also runs `collectstatic` through the existing entrypoint. Static
+files persist in `static_volume`, media persists in `media_volume`, and both
+volumes are owned for the image's UID/GID `1000:1000` contract. Use
+`docker compose down` for non-destructive teardown. Never run
+`docker compose down -v` in production because it deletes the static and media
+volumes.
+
 ## Test and quality checks
 
 ```bash

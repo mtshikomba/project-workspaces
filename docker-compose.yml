@@ -1,0 +1,30 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: client-tasks-web
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      RUN_MIGRATIONS: "0"
+    ports:
+      - "8000:8000"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    networks:
+      - app-network
+      - proxy-tier
+
+volumes:
+  static_volume:
+  media_volume:
+
+networks:
+  app-network:
+    driver: bridge
+  proxy-tier:
+    external: true
+    name: proxy-tier
