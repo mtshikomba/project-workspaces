@@ -334,6 +334,36 @@ class ClientRegistrationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create your account")
+        self.assertContains(response, '<body class="auth-page">')
+        self.assertContains(response, 'class="login-panel auth-form-panel"')
+        self.assertContains(response, 'name="csrfmiddlewaretoken"')
+        self.assertContains(response, 'href="/accounts/login/"')
+        self.assertContains(response, 'href="/"')
+
+    def test_login_page_uses_shared_authentication_form_shell(self) -> None:
+        """Login exposes the shared auth layout and preserves redirect state."""
+        response = self.client.get("/accounts/login/?next=/workspace/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<body class="auth-page">')
+        self.assertContains(response, 'class="login-panel auth-form-panel"')
+        self.assertContains(response, 'name="csrfmiddlewaretoken"')
+        self.assertContains(response, 'name="next" value="/workspace/"')
+        self.assertContains(response, 'href="/accounts/register/"')
+        self.assertContains(response, 'href="/"')
+
+    def test_invalid_login_preserves_username_and_renders_error(self) -> None:
+        """Invalid login keeps the username and renders the form error in place."""
+        response = self.client.post(
+            "/accounts/login/",
+            {"username": "missing-client", "password": "wrong-password"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="login-panel auth-form-panel"')
+        self.assertContains(response, "Please enter a correct username and password")
+        self.assertContains(response, 'value="missing-client"')
+        self.assertContains(response, "Create an account")
 
     def test_successful_registration_creates_client_user(self) -> None:
         """Valid registration creates a regular user in the Client group."""
