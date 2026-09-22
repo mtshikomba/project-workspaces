@@ -33,6 +33,7 @@ class HealthCheckViewTests(TestCase):
     def test_static_files_have_a_collectstatic_destination(self) -> None:
         """The production image has a dedicated static-file output directory."""
         self.assertEqual(settings.STATIC_ROOT, settings.BASE_DIR / "staticfiles")
+        self.assertEqual(settings.MEDIA_ROOT, settings.BASE_DIR / "media")
 
 
 class PublicLandingPageTests(TestCase):
