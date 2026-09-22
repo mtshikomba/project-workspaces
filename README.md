@@ -161,6 +161,42 @@ python manage.py runserver
 
 The health check is available at `http://127.0.0.1:8000/health/`.
 
+## Docker image
+
+The production image uses Python 3.13, Gunicorn, and the `config.wsgi:application`
+WSGI entrypoint. It runs as the non-root `app` user with UID/GID `1000:1000`.
+The image remains compatible with the repository's default SQLite configuration;
+shared MySQL configuration is a separate deployment concern and is not added by
+this image ticket.
+
+Build and run the image locally:
+
+```bash
+docker build -t client-tasks:local .
+docker run --rm --publish 8000:8000 \
+	--env DJANGO_SECRET_KEY=local-container-key \
+	--env DJANGO_DEBUG=true \
+	--env DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost \
+	--env RUN_MIGRATIONS=1 \
+	client-tasks:local
+```
+
+`RUN_MIGRATIONS=1` is an explicit operator choice. Without it, the entrypoint
+logs that migrations were skipped, then runs `collectstatic` and starts Gunicorn.
+This avoids applying schema changes silently on every restart. For a production
+deployment, run migrations as a visible release step against the selected
+database before starting the web process.
+
+The image healthcheck uses Python's standard library against `/health/`; inspect
+it with `docker inspect`. Static output is written to `/app/staticfiles`, and
+runtime media is expected at `/app/media`. Any mounted volume for those paths
+must be writable by UID/GID `1000:1000`.
+
+The Docker build context excludes local environment files, the development
+virtual environment, SQLite data, Git metadata, test artifacts, and editor files.
+Never pass `DJANGO_SECRET_KEY`, database credentials, or other secrets through
+Docker build arguments; provide runtime secrets through the deployment platform.
+
 ## Test and quality checks
 
 ```bash
