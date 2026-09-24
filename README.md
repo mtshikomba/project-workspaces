@@ -68,6 +68,10 @@ docker run --rm --publish 8000:8000 \
   client-tasks:local
 ```
 
+The production Compose service runs Django migrations on startup with
+`RUN_MIGRATIONS=1`. The application owns its MySQL schema, so sharing the
+MySQL server with other applications does not share migration ownership.
+
 ## Validation
 
 ```bash
